@@ -1,0 +1,10 @@
+{
+  "name": "Client Export Plugin",
+  "shortName": "clientexport",
+  "version": "1.0.0",
+  "author": "Mr.Green",
+  "description": "Eksport details and software to CSV or TXT",
+  "hasAdminPanel": false,
+  "homepage": "",
+  "meshCentralCompat": ">=0.9.0"
+}
