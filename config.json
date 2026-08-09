@@ -6,12 +6,12 @@
   "description": "Eksport detail and software to CSV ot TXT",
   "hasAdminPanel": false,
   "homepage": "https://github.com/greendwarf1-sketch/MeshCentral-exportclient",
-  "changelogUrl": "https://github.com/greendwarf1-sketch/meshcentral-exportclient/commits/main",
+  "changelogUrl": "https://github.com/greendwarf1-sketch/MeshCentral-exportclient/commits/main",
   "configUrl": "https://raw.githubusercontent.com/greendwarf1-sketch/MeshCentral-exportclient/refs/heads/main/config.json",
-  "downloadUrl": "https://github.com/greendwarf1-sketch/meshcentral-exportclient/archive/refs/heads/main.zip",
+  "downloadUrl": "https://github.com/greendwarf1-sketch/MeshCentral-exportclient/archive/refs/heads/main.zip",
   "repository": {
     "type": "git",
-    "url": "https://github.com/greendwarf1-sketch/meshcentral-exportclient.git"
+    "url": "https://github.com/greendwarf1-sketch/Meshcentral-exportclient.git"
   },
   "meshCentralCompat": ">=0.9.0"
 }
