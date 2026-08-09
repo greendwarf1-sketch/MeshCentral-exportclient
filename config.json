@@ -8,7 +8,7 @@
   "homepage": "https://github.com/greendwarf1-sketch/meshcentral-clientexport",
   "changelogUrl": "https://github.com/greendwarf1-sketch/meshcentral-clientexport/commits/main",
   "configUrl": "https://raw.githubusercontent.com/greendwarf1-sketch/MeshCentral-exportclient/refs/heads/main/config.json",
-  "downloadUrl": "https://github.com/greendwarf1-sketchmeshcentral-clientexport/archive/refs/heads/main.zip",
+  "downloadUrl": "https://github.com/greendwarf1-sketch/meshcentral-clientexport/archive/refs/heads/main.zip",
   "repository": {
     "type": "git",
     "url": "https://github.com/greendwarf1-sketch/meshcentral-clientexport.git"
