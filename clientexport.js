@@ -1,8 +1,8 @@
 'use strict';
 /**********************************************************************
- * Copyright (C) 2026 Mr. Green & MCS
+ * Copyright (C) 2026 Mr. Green
  * 
- * clientexport.js - Ispravljeni plugin za MeshCentral sučelje
+ * clientexport.js - Plugin prema službenoj MeshCentral arhitekturi
  **********************************************************************/
 
 module.exports.clientexport = function (parent) {
@@ -15,40 +15,45 @@ module.exports.clientexport = function (parent) {
     ];
 
     // ====================================================================
-    // FRONT-END: WEB UI HOOK 
+    // FRONT-END: WEB UI HOOK (Prikaz u "Plugins" tabu)
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
-        // Provjeravamo je li korisnik na stranici pojedinačnog uređaja
+        // Preskačemo ako nismo na stranici konkretnog računala
         if (typeof currentNode == 'undefined' || currentNode == null) return;
-        
         var nodeId = currentNode._id;
 
-        // Provjeravamo postoje li već tipke da ih ne dupliciramo
-        if (document.getElementById('btn-export-csv')) return;
-
-        // Tražimo ispravan kontejner na stranici uređaja (gdje su General, Desktop, Terminal...)
-        // MeshCentral sprema akcije/gumbe unutar gornjeg desnog dijela panela uređaja
-        var targetContainer = document.getElementById('devicetabtext') || document.getElementById('devicePanel');
+        // Ciljamo isključivo kontejner "Plugins" taba
+        var targetContainer = document.getElementById('pluginPanel'); 
+        if (!targetContainer) targetContainer = document.getElementById('devicePluginPanel');
         
-        // Ako ne nađemo tab tekst, tražimo alternativni toolbar u zaglavlju uređaja
-        if (!targetContainer) {
-            targetContainer = document.querySelector('.deviceToolbar') || document.getElementById('nodeactiontable');
-        }
-
         if (targetContainer) {
-            // Okvir za naše izvoze da bude uredno složeno
-            var wrapper = document.createElement('div');
-            wrapper.id = 'clientexport-wrapper';
-            wrapper.style.display = 'inline-block';
-            wrapper.style.marginLeft = '15px';
-            wrapper.style.verticalAlign = 'middle';
+            // Sprječavanje duplikata: Ako je naša kućica već tu, samo ažuriramo nodeID
+            var existingBox = document.getElementById('clientExportBox');
+            if (existingBox) {
+                document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
+                document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
+                return;
+            }
+
+            // Kreiramo vlastiti vizualni blok (Card) unutar Plugins taba
+            var exportBox = document.createElement('div');
+            exportBox.id = 'clientExportBox';
+            exportBox.style.border = '1px solid #ccc';
+            exportBox.style.padding = '15px';
+            exportBox.style.margin = '10px 0 20px 0';
+            exportBox.style.backgroundColor = '#f9f9f9';
+            exportBox.style.borderRadius = '4px';
+
+            // Tekst unutar našeg panela
+            exportBox.innerHTML = '<h4 style="margin-top:0; color:#333; font-weight:bold;">Client Export (mTicket)</h4>' +
+                                  '<p style="font-size:13px; color:#666; margin-bottom:15px;">Preuzmite hardverske podatke i popis softvera za ovaj uređaj.</p>';
 
             // Kreiranje tipke za CSV
             var btnCsv = document.createElement('button');
             btnCsv.id = 'btn-export-csv';
             btnCsv.innerHTML = '📥 Export CSV';
             btnCsv.className = 'btn btn-default btn-sm'; 
-            btnCsv.style.marginRight = '5px';
+            btnCsv.style.marginRight = '10px';
             btnCsv.onclick = function(e) {
                 e.preventDefault();
                 window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId);
@@ -64,16 +69,17 @@ module.exports.clientexport = function (parent) {
                 window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId);
             };
 
-            // Pakiramo tipke u wrapper i ubacujemo u sučelje
-            wrapper.appendChild(btnCsv);
-            wrapper.appendChild(btnTicket);
-            targetContainer.appendChild(wrapper);
+            // Spajamo tipke u našu kućicu
+            exportBox.appendChild(btnCsv);
+            exportBox.appendChild(btnTicket);
+
+            // Ubacujemo našu kućicu na sam vrh Plugins taba (iznad ScriptTaska i ostalih)
+            targetContainer.insertBefore(exportBox, targetContainer.firstChild);
         }
     };
 
-
     // ====================================================================
-    // BACK-END: SERVER HOOK
+    // BACK-END: SERVER HOOK (Generiranje datoteka)
     // ====================================================================
     obj.server_startup = function () {
         
