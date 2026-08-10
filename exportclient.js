@@ -2,10 +2,10 @@
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
  * 
- * clientexport.js - Kompatibilno s Ryan Blenis arhitekturom
+ * exportclient.js - Kompatibilno s Ryan Blenis arhitekturom
  **********************************************************************/
 
-module.exports.clientexport = function (parent) {
+module.exports.exportclient = function (parent) {
     var obj = {};
     obj.parent = parent;
     obj.meshServer = parent.parent;
@@ -14,47 +14,45 @@ module.exports.clientexport = function (parent) {
         'onDeviceRefreshEnd'
     ];
 
-// ====================================================================
+    // ====================================================================
     // FRONT-END: WEB UI HOOK (S ugrađenim logovima za traženje grešaka)
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
-        console.log("ClientExport [TEST 1]: Pokrenut onDeviceRefreshEnd funkcija!");
+        console.log("ExportClient [TEST 1]: Pokrenut onDeviceRefreshEnd funkcija!");
 
         if (typeof currentNode == 'undefined' || currentNode == null) {
-            console.log("ClientExport [GREŠKA]: Nema odabranog računala (currentNode je prazan).");
+            console.log("ExportClient [GREŠKA]: Nema odabranog računala (currentNode je prazan).");
             return;
         }
         var nodeId = currentNode._id;
-        console.log("ClientExport [TEST 2]: Trenutni node ID prepoznat -> " + nodeId);
+        console.log("ExportClient [TEST 2]: Trenutni node ID prepoznat -> " + nodeId);
 
         var p19 = document.getElementById('p19');
         if (!p19) {
-            console.log("ClientExport [GREŠKA]: Ne mogu pronaći kontejner 'p19' (Plugins kartica ne postoji u HTML-u)!");
+            console.log("ExportClient [GREŠKA]: Ne mogu pronaći kontejner 'p19'!");
             return;
         }
-        console.log("ClientExport [TEST 3]: Pronađen kontejner p19.");
 
-        if (document.getElementById('nav-clientexport')) {
-            console.log("ClientExport [TEST 4]: Gumb već postoji na ekranu, samo osvježavam Node ID.");
-            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
-            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
+        if (document.getElementById('nav-exportclient')) {
+            console.log("ExportClient [TEST 3]: Gumb već postoji na ekranu, samo osvježavam Node ID.");
+            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv/' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket/' + encodeURIComponent(nodeId); };
             return;
         }
 
         var pluginNav = null;
         var links = p19.getElementsByTagName('a');
-        console.log("ClientExport [TEST 5]: Tražim postojeći izbornik drugih pluginova. Pronađeno linkova: " + links.length);
+        console.log("ExportClient [TEST 4]: Tražim postojeći izbornik drugih pluginova...");
         
         for (var i = 0; i < links.length; i++) {
             if (links[i].innerHTML.indexOf('ScriptTask') !== -1 || links[i].innerHTML.indexOf('Work From Home') !== -1 || links[i].innerHTML.indexOf('Event Log') !== -1) {
                 pluginNav = links[i].parentNode;
-                console.log("ClientExport [TEST 6]: Uspješno zakačen na postojeći meni drugog plugina.");
+                console.log("ExportClient [TEST 5]: Uspješno zakačen na postojeći meni.");
                 break;
             }
         }
 
         if (!pluginNav) {
-            console.log("ClientExport [TEST 6-B]: Nema drugih pluginova, pokušavam kreirati vlastiti meni.");
             pluginNav = document.createElement('div');
             pluginNav.id = 'pluginNav';
             pluginNav.style.paddingBottom = '15px';
@@ -67,7 +65,6 @@ module.exports.clientexport = function (parent) {
             }
         }
 
-        console.log("ClientExport [TEST 7]: Crtam link u meni.");
         if (pluginNav.children.length > 0) {
             var sep = document.createElement('span');
             sep.innerHTML = ' <span style="color:#888;">|</span> ';
@@ -75,15 +72,14 @@ module.exports.clientexport = function (parent) {
         }
 
         var myLink = document.createElement('a');
-        myLink.id = 'nav-clientexport';
+        myLink.id = 'nav-exportclient';
         myLink.href = '#';
         myLink.innerHTML = 'Client Export';
         myLink.style.cursor = 'pointer';
         pluginNav.appendChild(myLink);
 
-        console.log("ClientExport [TEST 8]: Kreiram ploču sa sadržajem.");
         var myPanel = document.createElement('div');
-        myPanel.id = 'panel-clientexport';
+        myPanel.id = 'panel-exportclient';
         myPanel.style.display = 'none';
         myPanel.innerHTML = `
             <div style="border:1px solid #ddd; padding:20px; border-radius:5px; background-color:#f9f9f9; margin-top:15px;">
@@ -105,10 +101,10 @@ module.exports.clientexport = function (parent) {
             myPanel.style.display = 'block';
         };
 
-        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
-        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
+        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv/' + encodeURIComponent(nodeId); };
+        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket/' + encodeURIComponent(nodeId); };
         
-        console.log("ClientExport [TEST 9]: SVE JE USPJEŠNO ODRAĐENO!");
+        console.log("ExportClient [TEST 6]: SVE JE USPJEŠNO ODRAĐENO!");
     };
 
     // ====================================================================
@@ -117,7 +113,7 @@ module.exports.clientexport = function (parent) {
     obj.server_startup = function () {
         
         // RUTA 1: CSV EXPORT
-        obj.meshServer.app.get('/plugin/clientexport/csv/:nodeid', function (req, res) {
+        obj.meshServer.app.get('/plugin/exportclient/csv/:nodeid', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
             var nodeid = decodeURIComponent(req.params.nodeid);
@@ -128,9 +124,9 @@ module.exports.clientexport = function (parent) {
                 var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
                 
                 var csv = "Kategorija,Svojstvo,Vrijednost\n";
-                csv += \`Osnovno,Ime,\${node.name || 'Nepoznato'}\n\`;
-                csv += \`Osnovno,Opis,\${node.desc || ''}\n\`;
-                csv += \`Osnovno,OS,\${node.mtype || ''}\n\`;
+                csv += `Osnovno,Ime,${node.name || 'Nepoznato'}\n`;
+                csv += `Osnovno,Opis,${node.desc || ''}\n`;
+                csv += `Osnovno,OS,${node.mtype || ''}\n`;
                 
                 if (node.software) {
                     var swList = node.software.apps || node.software;
@@ -138,7 +134,7 @@ module.exports.clientexport = function (parent) {
                         swList.forEach(function(app) {
                             var appName = (app.name || app.N || 'Nepoznato').replace(/,/g, ' '); 
                             var appVer = (app.version || app.V || '').replace(/,/g, ' ');
-                            csv += \`Softver,\${appName},\${appVer}\n\`;
+                            csv += `Softver,${appName},${appVer}\n`;
                         });
                     }
                 }
@@ -150,7 +146,7 @@ module.exports.clientexport = function (parent) {
         });
 
         // RUTA 2: TICKETING (TXT) EXPORT
-        obj.meshServer.app.get('/plugin/clientexport/ticket/:nodeid', function (req, res) {
+        obj.meshServer.app.get('/plugin/exportclient/ticket/:nodeid', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
             var nodeid = decodeURIComponent(req.params.nodeid);
