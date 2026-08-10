@@ -33,19 +33,16 @@ module.exports.exportclient = function (parent) {
             iframe.src = url;
         }
 
-        // NOVO: Funkcija koja prikuplja podatke iz UI RAM-a i šalje na naš backend
         var sendToApi = function(e) {
             e.preventDefault();
             var btn = this;
             
-            // HAKIRANJE MEMORIJE PREGLEDNIKA: Uzimamo podatke koji su već učitani!
             var hwData = null;
             var swData = null;
             
             if (typeof systemInfo !== 'undefined' && systemInfo[nodeId]) hwData = systemInfo[nodeId];
             if (typeof softwareInfo !== 'undefined' && softwareInfo[nodeId]) swData = softwareInfo[nodeId];
 
-            // Ako podaci nisu učitani, tražimo od korisnika da klikne na kartice
             if (!hwData || !swData) {
                 var ans = confirm("⚠️ Hardver ili softver još nisu učitani u memoriju!\n\nMolimo vas da prvo kliknete na kartice 'Hardware' i 'Software' na vrhu ekrana kako bi se podaci povukli s računala, a zatim pokušajte ponovno.\n\nŽelite li svejedno poslati nepotpune podatke?");
                 if (!ans) return;
@@ -55,7 +52,6 @@ module.exports.exportclient = function (parent) {
             btn.innerHTML = '⏳ Slanje...';
             btn.disabled = true;
 
-            // Šaljemo sve kao JSON POST zahtjev prema našem backend pluginu
             fetch('/pluginadmin.ashx?pin=exportclient&action=send_api_post', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -149,7 +145,7 @@ module.exports.exportclient = function (parent) {
     // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         
-        // 1. API SYNC (NOVI POST PRISTUP)
+        // 1. API SYNC
         if (req.query.action === 'send_api_post') {
             res.setHeader('Content-Type', 'application/json');
             
@@ -158,7 +154,6 @@ module.exports.exportclient = function (parent) {
                 var frontEndHw = parsedBody.hw;
                 var frontEndSw = parsedBody.sw;
 
-                // I dalje trebamo bazu samo za osnovne podatke (Ime, IP, OS)
                 var safeDbGet = function(id, callback) {
                     if (typeof obj.meshServer.db.Get === 'function') obj.meshServer.db.Get(id, callback);
                     else if (typeof obj.meshServer.db.get === 'function') obj.meshServer.db.get(id, callback);
@@ -172,7 +167,6 @@ module.exports.exportclient = function (parent) {
 
                     if (!node) return res.send(JSON.stringify({ success: false, error: 'Računalo nije pronađeno u bazi.' }));
 
-                    // Spajamo osnovne podatke iz baze s dubokim podacima iz RAM-a preglednika!
                     var payloadObj = {
                         node_id: node._id,
                         name: node.name || 'Nepoznato',
@@ -184,7 +178,6 @@ module.exports.exportclient = function (parent) {
 
                     var payloadStr = JSON.stringify(payloadObj);
 
-                    // Slanje u mTicket
                     var https = require('https');
                     var url = require('url');
                     var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
@@ -221,7 +214,6 @@ module.exports.exportclient = function (parent) {
                 });
             };
 
-            // Parsiranje dolaznog JSON-a od Front-Enda
             if (req.body && Object.keys(req.body).length > 0) {
                 processSync(req.body);
             } else {
@@ -235,10 +227,66 @@ module.exports.exportclient = function (parent) {
             return;
         }
 
-                        // --------------------------------------------------------
-                        // CSV GENERIRANJE
-                        // --------------------------------------------------------
-                        if (req.query.download === 'csv' || req.query.download === 'ticket') {
+        // --------------------------------------------------------
+        // 2. CSV i TXT GENERIRANJE
+        // --------------------------------------------------------
+        if (req.query.download === 'csv' || req.query.download === 'ticket') {
+            
+            var nodeid = req.query.node;
+            if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
+
+            var sysid = nodeid.replace(/^node\/\//, 'si//');
+            var swid  = nodeid.replace(/^node\/\//, 'sw//');
+
+            var safeDbGet = function(id, callback) {
+                if (typeof obj.meshServer.db.Get === 'function') obj.meshServer.db.Get(id, callback);
+                else if (typeof obj.meshServer.db.get === 'function') obj.meshServer.db.get(id, callback);
+                else callback("Nije pronađena db.Get funkcija", null);
+            };
+
+            // Ponovno otvaramo traženje po bazi kako bi radilo kao prije
+            safeDbGet(nodeid, function (err, nodes) {
+                var node = null;
+                if (Array.isArray(nodes) && nodes.length > 0) node = nodes[0];
+                else if (nodes && !Array.isArray(nodes) && nodes._id) node = nodes;
+
+                if (!node) return res.send("<h3>Računalo nije pronađeno u bazi!</h3>");
+
+                safeDbGet(sysid, function (err, sysnodes) {
+                    var sysinfo = null;
+                    if (Array.isArray(sysnodes) && sysnodes.length > 0) sysinfo = sysnodes[0];
+                    else if (sysnodes && !Array.isArray(sysnodes) && sysnodes._id) sysinfo = sysnodes;
+
+                    safeDbGet(swid, function (err, swnodes) {
+                        var software = null;
+                        if (Array.isArray(swnodes) && swnodes.length > 0) software = swnodes[0];
+                        else if (swnodes && !Array.isArray(swnodes) && swnodes._id) software = swnodes;
+
+                        var hw = sysinfo ? (sysinfo.public || sysinfo.data || sysinfo.hwinfo || sysinfo) : (node.hwinfo || node.hardware || node.sysinfo);
+                        var sw = software ? (software.public || software.data || software.apps || software.software || software) : (node.software || node.swinfo || node.apps);
+
+                        var wsagents = obj.meshServer.webserver.wsagents;
+                        if (wsagents && wsagents[nodeid]) {
+                            if (!hw && wsagents[nodeid].hwinfo) hw = wsagents[nodeid].hwinfo;
+                            if (!sw && wsagents[nodeid].software) sw = wsagents[nodeid].software;
+                        }
+
+                        var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+                        function formatBytes(bytes) {
+                            if (!bytes || bytes === 0) return 'Nepoznato';
+                            var gb = (bytes / (1024 * 1024 * 1024)).toFixed(2);
+                            return gb + ' GB';
+                        }
+                        
+                        function formatDrive(drive) {
+                            if (!drive) return 'Nepoznat Disk';
+                            var total = (drive.total / (1024*1024*1024)).toFixed(2);
+                            var free = (drive.free / (1024*1024*1024)).toFixed(2);
+                            return drive.name + " (" + total + " GB Ukupno, " + free + " GB Slobodno)";
+                        }
+
+                        if (req.query.download === 'csv') {
                             var csv = "Kategorija,Svojstvo,Vrijednost\n";
                             csv += `OSNOVNO,Ime,${node.name || 'Nepoznato'}\n`;
                             csv += `OSNOVNO,IP Adresa,${node.host || 'Offline'}\n`;
@@ -286,9 +334,6 @@ module.exports.exportclient = function (parent) {
                             res.setHeader('Content-type', 'text/csv; charset=utf-8');
                             res.send(csv);
                         } 
-                        // --------------------------------------------------------
-                        // TXT GENERIRANJE
-                        // --------------------------------------------------------
                         else if (req.query.download === 'ticket') {
                             var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
                             txt += "MC_NODE_ID: " + node._id + "\n";
@@ -334,9 +379,10 @@ module.exports.exportclient = function (parent) {
                     });
                 });
             });
-        } else {
-            res.sendStatus(404);
+            return;
         }
+
+        res.sendStatus(404);
     };
 
     return obj;
