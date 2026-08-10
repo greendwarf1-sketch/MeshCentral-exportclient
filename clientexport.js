@@ -14,40 +14,49 @@ module.exports.clientexport = function (parent) {
         'onDeviceRefreshEnd'
     ];
 
-    // ====================================================================
-    // FRONT-END: WEB UI HOOK (Pametno traženje izbornika)
+// ====================================================================
+    // FRONT-END: WEB UI HOOK (S ugrađenim logovima za traženje grešaka)
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
-        if (typeof currentNode == 'undefined' || currentNode == null) return;
+        console.log("ClientExport [TEST 1]: Pokrenut onDeviceRefreshEnd funkcija!");
+
+        if (typeof currentNode == 'undefined' || currentNode == null) {
+            console.log("ClientExport [GREŠKA]: Nema odabranog računala (currentNode je prazan).");
+            return;
+        }
         var nodeId = currentNode._id;
+        console.log("ClientExport [TEST 2]: Trenutni node ID prepoznat -> " + nodeId);
 
-        // p19 je fiksni kontejner za "Plugins" karticu u MeshCentralu
         var p19 = document.getElementById('p19');
-        if (!p19) return;
+        if (!p19) {
+            console.log("ClientExport [GREŠKA]: Ne mogu pronaći kontejner 'p19' (Plugins kartica ne postoji u HTML-u)!");
+            return;
+        }
+        console.log("ClientExport [TEST 3]: Pronađen kontejner p19.");
 
-        // Ako je naša tipka već dodana, samo ažuriramo NodeID i prekidamo
         if (document.getElementById('nav-clientexport')) {
+            console.log("ClientExport [TEST 4]: Gumb već postoji na ekranu, samo osvježavam Node ID.");
             document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
             document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
             return;
         }
 
-        // 1. PRONALAZAK POSTOJEĆEG MENIJA OSTALIH PLUGIN-OVA
-        // Skripta traži gdje su se smjestili drugi pluginovi kako bi se smjestila kraj njih
         var pluginNav = null;
         var links = p19.getElementsByTagName('a');
+        console.log("ClientExport [TEST 5]: Tražim postojeći izbornik drugih pluginova. Pronađeno linkova: " + links.length);
+        
         for (var i = 0; i < links.length; i++) {
-            if (links[i].innerHTML.indexOf('ScriptTask') !== -1 || 
-                links[i].innerHTML.indexOf('Work From Home') !== -1 || 
-                links[i].innerHTML.indexOf('Event Log') !== -1) {
+            if (links[i].innerHTML.indexOf('ScriptTask') !== -1 || links[i].innerHTML.indexOf('Work From Home') !== -1 || links[i].innerHTML.indexOf('Event Log') !== -1) {
                 pluginNav = links[i].parentNode;
+                console.log("ClientExport [TEST 6]: Uspješno zakačen na postojeći meni drugog plugina.");
                 break;
             }
         }
 
-        // 2. FALLBACK KREIRANJE MENIJA (ako nema drugih pluginova)
         if (!pluginNav) {
+            console.log("ClientExport [TEST 6-B]: Nema drugih pluginova, pokušavam kreirati vlastiti meni.");
             pluginNav = document.createElement('div');
+            pluginNav.id = 'pluginNav';
             pluginNav.style.paddingBottom = '15px';
             pluginNav.style.fontSize = '14px';
             var p19title = document.getElementById('p19title');
@@ -58,7 +67,7 @@ module.exports.clientexport = function (parent) {
             }
         }
 
-        // 3. DODAVANJE NAŠEG LINKA U MENI
+        console.log("ClientExport [TEST 7]: Crtam link u meni.");
         if (pluginNav.children.length > 0) {
             var sep = document.createElement('span');
             sep.innerHTML = ' <span style="color:#888;">|</span> ';
@@ -72,55 +81,34 @@ module.exports.clientexport = function (parent) {
         myLink.style.cursor = 'pointer';
         pluginNav.appendChild(myLink);
 
-        // 4. KREIRANJE NAŠEG PANELA (Skrivenog po defaultu)
+        console.log("ClientExport [TEST 8]: Kreiram ploču sa sadržajem.");
         var myPanel = document.createElement('div');
         myPanel.id = 'panel-clientexport';
         myPanel.style.display = 'none';
         myPanel.innerHTML = `
             <div style="border:1px solid #ddd; padding:20px; border-radius:5px; background-color:#f9f9f9; margin-top:15px;">
-                <h4 style="margin-top:0; color:#333; font-weight:bold;">
-                    📥 mTicket Client Export
-                </h4>
-                <p style="font-size:13px; color:#666; margin-bottom:15px;">
-                    Brzo preuzmite hardversku specifikaciju i popis instaliranog softvera za ovaj uređaj.
-                </p>
-                <button id="btn-export-csv" class="btn btn-secondary btn-sm" style="margin-right:10px;">
-                    Preuzmi CSV
-                </button>
-                <button id="btn-export-ticket" class="btn btn-primary btn-sm">
-                    Preuzmi TXT (Ticketing)
-                </button>
+                <h4 style="margin-top:0; color:#333; font-weight:bold;">mTicket Client Export</h4>
+                <p style="font-size:13px; color:#666; margin-bottom:15px;">Brzo preuzmite hardversku specifikaciju.</p>
+                <button id="btn-export-csv" class="btn btn-secondary btn-sm" style="margin-right:10px;">Preuzmi CSV</button>
+                <button id="btn-export-ticket" class="btn btn-primary btn-sm">Preuzmi TXT (Ticketing)</button>
             </div>
         `;
         p19.appendChild(myPanel);
 
-        // 5. LOGIKA ZA PREBACIVANJE KARTICA (Kao kod ostalih pluginova)
         myLink.onclick = function(e) {
             e.preventDefault();
-            
-            // Sakrij sve ostale panele unutar p19
             for (var i = 0; i < p19.children.length; i++) {
                 var child = p19.children[i];
-                // Ne skrivaj naslov, glavnu navigaciju menija ili naš vlastiti panel
-                if (child.id === 'p19title' || child.contains(pluginNav) || child === myPanel) {
-                    continue;
-                }
+                if (child.id === 'p19title' || child === pluginNav || child === myPanel) continue;
                 child.style.display = 'none';
             }
-            
-            // Prikaži isključivo naš panel
             myPanel.style.display = 'block';
         };
 
-        // 6. AKCIJE ZA TIPKE
-        document.getElementById('btn-export-csv').onclick = function(e) { 
-            e.preventDefault(); 
-            window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); 
-        };
-        document.getElementById('btn-export-ticket').onclick = function(e) { 
-            e.preventDefault(); 
-            window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); 
-        };
+        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
+        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
+        
+        console.log("ClientExport [TEST 9]: SVE JE USPJEŠNO ODRAĐENO!");
     };
 
     // ====================================================================
