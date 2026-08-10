@@ -2,7 +2,7 @@
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
  * 
- * exportclient.js - Backend Full Hardware/Software Export
+ * exportclient.js - Backend Full Export + RAM Fallback
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -15,7 +15,7 @@ module.exports.exportclient = function (parent) {
     ];
 
     // ====================================================================
-    // FRONT-END: WEB UI HOOK
+    // FRONT-END: WEB UI HOOK (Bez Logout Flickera)
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
         if (typeof currentNode == 'undefined' || currentNode == null) return;
@@ -24,6 +24,7 @@ module.exports.exportclient = function (parent) {
         var p19 = document.getElementById('p19');
         if (!p19) return;
 
+        // Skriveni iframe sprečava treperenje/logout prilikom downloada
         function triggerSilentDownload(url) {
             var iframe = document.getElementById('exportHiddenFrame');
             if (!iframe) {
@@ -103,7 +104,7 @@ module.exports.exportclient = function (parent) {
     };
 
     // ====================================================================
-    // BACK-END: FORMATIRANJE I IZVOZ PODATAKA
+    // BACK-END: HTTP ZAHTJEVI (Ispravno čitanje Baze + RAM Fallback)
     // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         
@@ -112,32 +113,29 @@ module.exports.exportclient = function (parent) {
             var nodeid = req.query.node;
             if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
 
-            var sysid = nodeid.replace(/^node\/\//, 'si//');
-            var swid  = nodeid.replace(/^node\/\//, 'sw//');
-
-            // Vadimo glavni node, sysinfo i software
-            obj.meshServer.db.Get([nodeid, sysid, swid], function (err, docs) {
-                var node = null, sysinfo = null, software = null;
+            // OVDJE JE ISPRAVAK: Tražimo samo nodeid (bez nizova!)
+            obj.meshServer.db.Get(nodeid, function (err, nodes) {
                 
-                if (docs && docs.length > 0) {
-                    for (var i = 0; i < docs.length; i++) {
-                        if (docs[i]._id === nodeid) node = docs[i];
-                        else if (docs[i]._id === sysid) sysinfo = docs[i];
-                        else if (docs[i]._id === swid) software = docs[i];
+                if (err || !nodes || nodes.length === 0) {
+                    return res.send("<h3>Računalo nije pronađeno u bazi!</h3><p>Greška: " + String(err) + "</p>");
+                }
+                
+                var node = nodes[0];
+                var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+                // Vadimo hardver/softver iz Node dokumenta
+                var hw = node.hwinfo || node.coreinfo || null;
+                var sw = node.software || node.apps || null;
+
+                // MAGIJA: Ako podaci fale u bazi, čupamo ih iz RAM-a direktno od aktivnog agenta!
+                if (!hw || !sw) {
+                    var wsagents = obj.meshServer.webserver.wsagents;
+                    if (wsagents && wsagents[nodeid]) {
+                        if (!hw && wsagents[nodeid].hwinfo) hw = wsagents[nodeid].hwinfo;
+                        if (!sw && wsagents[nodeid].software) sw = wsagents[nodeid].software;
                     }
                 }
 
-                if (!node) return res.status(404).send('Računalo nije pronađeno u bazi.');
-                var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-
-                // --------------------------------------------------------
-                // POMOĆNE FUNKCIJE ZA FORMATIRANJE HARDVERA
-                // --------------------------------------------------------
-                
-                // Povlačenje sysinfo iz bilo kojeg mogućeg JSON mjesta
-                var hw = sysinfo ? (sysinfo.data || sysinfo.hwinfo || sysinfo) : (node.hwinfo || null);
-                var sw = software ? (software.data || software.apps || software.software || software) : (node.software || null);
-                
                 // Formatiranje bajtova u GB
                 function formatBytes(bytes) {
                     if (!bytes || bytes === 0) return 'Nepoznato';
@@ -145,7 +143,7 @@ module.exports.exportclient = function (parent) {
                     return gb + ' GB';
                 }
 
-                // Formatiranje diska (Oduzimanje praznog prostora)
+                // Formatiranje diska
                 function formatDrive(drive) {
                     if (!drive) return 'Nepoznat Disk';
                     var total = (drive.total / (1024*1024*1024)).toFixed(2);
@@ -153,9 +151,7 @@ module.exports.exportclient = function (parent) {
                     return drive.name + " (" + total + " GB Ukupno, " + free + " GB Slobodno)";
                 }
 
-                // --------------------------------------------------------
-                // CSV GENERIRANJE (Savršeno formatirano za Excel)
-                // --------------------------------------------------------
+                // --- CSV GENERIRANJE ---
                 if (req.query.download === 'csv') {
                     var csv = "Kategorija,Svojstvo,Vrijednost\n";
                     csv += `OSNOVNO,Ime,${node.name || 'Nepoznato'}\n`;
@@ -163,31 +159,21 @@ module.exports.exportclient = function (parent) {
                     csv += `OSNOVNO,Operativni Sustav,${node.osdesc || node.mtype || 'Nepoznato'}\n`;
                     
                     if (hw) {
-                        // BIOS / Matična ploča
                         if (hw.bios && hw.bios.length > 0) csv += `HARDVER,Matična ploča,${hw.bios[0].board_name || 'Nepoznato'} (${hw.bios[0].board_vendor || ''})\n`;
+                        if (hw.netinfo) csv += `HARDVER,RAM Memorija,${formatBytes(hw.netinfo.totalmem || hw.totalmem)}\n`;
                         
-                        // RAM
-                        if (hw.netinfo) { // Ponekad RAM zna biti skriven u root node-u
-                            csv += `HARDVER,RAM Memorija,${formatBytes(hw.netinfo.totalmem || hw.totalmem)}\n`;
-                        }
-                        
-                        // Procesori
                         if (hw.cpu && hw.cpu.length > 0) {
                             hw.cpu.forEach(function(cpu) {
                                 var cpuName = cpu.name ? cpu.name.replace(/,/g, ' ') : 'Nepoznati CPU';
                                 csv += `HARDVER,Procesor,${cpuName}\n`;
                             });
                         }
-
-                        // Diskovi
                         if (hw.storage && hw.storage.length > 0) {
                             hw.storage.forEach(function(hdd) {
                                 var diskName = formatDrive(hdd).replace(/,/g, ' ');
                                 csv += `HARDVER,Disk,${diskName}\n`;
                             });
                         }
-                        
-                        // Mreža (MAC i IP adrese svih kartica)
                         if (hw.netinfo && hw.netinfo.netifs && hw.netinfo.netifs.length > 0) {
                             hw.netinfo.netifs.forEach(function(net) {
                                 if (net.mac && net.mac !== '00:00:00:00:00:00') {
@@ -196,10 +182,9 @@ module.exports.exportclient = function (parent) {
                             });
                         }
                     } else {
-                        csv += "HARDVER,Upozorenje,Agent još nije poslao podatke o hardveru.\n";
+                        csv += "HARDVER,Upozorenje,Nema hardverskih podataka u bazi ni u RAM-u\n";
                     }
 
-                    // Softver
                     if (sw) {
                         var swList = sw.apps || sw; 
                         if (Array.isArray(swList)) {
@@ -215,9 +200,7 @@ module.exports.exportclient = function (parent) {
                     res.setHeader('Content-type', 'text/csv; charset=utf-8');
                     res.send(csv);
                 } 
-                // --------------------------------------------------------
-                // TXT GENERIRANJE (Za direktan Import u Ticketing sustav)
-                // --------------------------------------------------------
+                // --- TXT GENERIRANJE ---
                 else if (req.query.download === 'ticket') {
                     var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
                     txt += "MC_NODE_ID: " + node._id + "\n";
@@ -227,25 +210,17 @@ module.exports.exportclient = function (parent) {
                     
                     if (hw) {
                         txt += "\n--- HARDWARE SUMMARY ---\n";
-                        
-                        // CPU
                         if (hw.cpu && hw.cpu[0]) txt += "CPU: " + hw.cpu[0].name + "\n";
-                        
-                        // RAM
                         if (hw.netinfo) txt += "RAM: " + formatBytes(hw.netinfo.totalmem || hw.totalmem) + "\n";
-                        
-                        // Diskovi
                         if (hw.storage) {
                             for(var d=0; d<hw.storage.length; d++) {
                                 txt += "DRIVE_" + d + ": " + formatDrive(hw.storage[d]) + "\n";
                             }
                         }
-
-                        // Sirovi JSON za mTicket PHP obradu
                         txt += "\n--- RAW HARDWARE JSON ---\n";
                         txt += JSON.stringify(hw, null, 2) + "\n";
                     } else {
-                        txt += "\n--- HARDWARE ---\nNema hardverskih podataka u bazi.\n";
+                        txt += "\n--- HARDWARE ---\nNema hardverskih podataka u bazi ni u RAM-u.\n";
                     }
 
                     txt += "\n--- SOFTWARE ---\n";
@@ -259,7 +234,7 @@ module.exports.exportclient = function (parent) {
                             txt += JSON.stringify(sw, null, 2) + "\n";
                         }
                     } else {
-                        txt += "Nema softverskih podataka u bazi.\n";
+                        txt += "Nema softverskih podataka u bazi ni u RAM-u.\n";
                     }
 
                     txt += "\n=== END OF EXPORT ===\n";
