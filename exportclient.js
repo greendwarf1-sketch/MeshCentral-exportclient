@@ -10,7 +10,6 @@ module.exports.exportclient = function (parent) {
     obj.parent = parent;
     obj.meshServer = parent.parent;
 
-    // U exports ide ISKLJUČIVO front-end funkcija.
     obj.exports = [
         'onDeviceRefreshEnd'
     ];
@@ -25,10 +24,10 @@ module.exports.exportclient = function (parent) {
         var p19 = document.getElementById('p19');
         if (!p19) return;
 
-        // Osvježavanje tipki (kreira savršeno kodiran ?node= link)
+        // Osvježavanje postojećih tipki s novim /api/ rutama
         if (document.getElementById('nav-exportclient')) {
-            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
-            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/api/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/api/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
             return;
         }
 
@@ -91,21 +90,20 @@ module.exports.exportclient = function (parent) {
             myPanel.style.display = 'block';
         };
 
-        // Dodjela on-click akcija koje gađaju nove ?node= rute
-        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
-        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
+        // Tipke sada gađaju /api/ rute!
+        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/api/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
+        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/api/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
     };
 
     // ====================================================================
-    // BACK-END: SERVER HOOK (Službeni naziv je server_startup)
+    // BACK-END: SERVER HOOK 
     // ====================================================================
     obj.server_startup = function () {
         
-        // RUTA 1: CSV EXPORT
-        obj.meshServer.app.get('/plugin/exportclient/csv', function (req, res) {
+        // RUTA 1: CSV EXPORT (Sada API ruta)
+        obj.meshServer.app.get('/api/plugin/exportclient/csv', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
-            // Preuzimamo node varijablu iz Query linka
             var nodeid = req.query.node;
             if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
 
@@ -137,11 +135,10 @@ module.exports.exportclient = function (parent) {
             });
         });
 
-        // RUTA 2: TICKETING (TXT) EXPORT
-        obj.meshServer.app.get('/plugin/exportclient/ticket', function (req, res) {
+        // RUTA 2: TICKETING (TXT) EXPORT (Sada API ruta)
+        obj.meshServer.app.get('/api/plugin/exportclient/ticket', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
-            // Preuzimamo node varijablu iz Query linka
             var nodeid = req.query.node;
             if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
 
