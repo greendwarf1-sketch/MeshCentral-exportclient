@@ -2,7 +2,7 @@
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
  * 
- * exportclient.js - Backend Full Export + Hidden Frame Download
+ * exportclient.js - Backend Full Export (Ispravno kaskadno DB čitanje)
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -24,7 +24,7 @@ module.exports.exportclient = function (parent) {
         var p19 = document.getElementById('p19');
         if (!p19) return;
 
-        // Funkcija za tiho preuzimanje bez napuštanja stranice (sprječava logout)
+        // Skriveni prozor za preuzimanje kako bi se izbjegao "Logout" trzaj
         function triggerSilentDownload(url) {
             var iframe = document.getElementById('exportHiddenFrame');
             if (!iframe) {
@@ -36,7 +36,7 @@ module.exports.exportclient = function (parent) {
             iframe.src = url;
         }
 
-        // Ako gumbi već postoje, samo ih usmjeri na novi skriveni downloader
+        // Ažuriranje postojećih tipki
         if (document.getElementById('nav-exportclient')) {
             document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); };
             document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); };
@@ -100,13 +100,13 @@ module.exports.exportclient = function (parent) {
             myPanel.style.display = 'block';
         };
 
-        // Tipke zovu tiho preuzimanje
+        // Tipke zovu skriveni iframe downloader
         document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); };
         document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); };
     };
 
     // ====================================================================
-    // BACK-END: HTTP ZAHTJEVI (Ekstrakcija iz sve 3 kolekcije baze podataka)
+    // BACK-END: HTTP ZAHTJEVI (Kaskadno vađenje iz baze podataka)
     // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         
@@ -115,90 +115,90 @@ module.exports.exportclient = function (parent) {
             var nodeid = req.query.node;
             if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
 
-            // MeshCentral drži podatke u 3 odvojena dokumenta: node//, si// (SysInfo) i sw// (Software)
             var sysid = nodeid.replace(/^node\/\//, 'si//');
             var swid  = nodeid.replace(/^node\/\//, 'sw//');
 
-            // Dohvaćamo sva 3 dokumenta odjednom
-            obj.meshServer.db.Get([nodeid, sysid, swid], function (err, docs) {
-                var node = null, sysinfo = null, software = null;
-                
-                if (docs && docs.length > 0) {
-                    for (var i = 0; i < docs.length; i++) {
-                        if (docs[i]._id === nodeid) node = docs[i];
-                        else if (docs[i]._id === sysid) sysinfo = docs[i];
-                        else if (docs[i]._id === swid) software = docs[i];
-                    }
-                }
+            // 1. Dohvaćanje glavnog Node dokumenta (Korak 1)
+            obj.meshServer.db.Get(nodeid, function (err, nodes) {
+                if (err || !nodes || nodes.length !== 1) return res.status(404).send('Računalo nije pronađeno u bazi.');
+                var node = nodes[0];
 
-                if (!node) return res.status(404).send('Računalo nije pronađeno u bazi.');
-                
-                // Sigurno izvlačenje podataka (ovisno o verziji agenta)
-                var hw = sysinfo ? (sysinfo.data || sysinfo.hwinfo || sysinfo) : node.hwinfo;
-                var sw = software ? (software.data || software.apps || software.software || software) : node.software;
-                
-                var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                // 2. Dohvaćanje SysInfo / Hardware dokumenta (Korak 2)
+                obj.meshServer.db.Get(sysid, function (err, sysnodes) {
+                    var sysinfo = (sysnodes && sysnodes.length > 0) ? sysnodes[0] : null;
 
-                // --------------------------------------------------------
-                // 1. CSV Generiranje
-                // --------------------------------------------------------
-                if (req.query.download === 'csv') {
-                    var csv = "Kategorija,Svojstvo,Vrijednost\n";
-                    csv += `Osnovno,Ime,${node.name || 'Nepoznato'}\n`;
-                    csv += `Osnovno,Opis,${node.desc || ''}\n`;
-                    csv += `Osnovno,OS,${node.osdesc || node.mtype || ''}\n`;
-                    
-                    if (sw) {
-                        var swList = sw.apps || sw; 
-                        if (Array.isArray(swList)) {
-                            swList.forEach(function(app) {
-                                var appName = (app.name || app.N || 'Nepoznato').replace(/,/g, ' '); 
-                                var appVer = (app.version || app.V || '').replace(/,/g, ' ');
-                                csv += `Softver,${appName},${appVer}\n`;
-                            });
-                        } else {
-                            csv += "Softver,Napomena,Pronađen je nestandardni format softvera\n";
+                    // 3. Dohvaćanje Software dokumenta (Korak 3)
+                    obj.meshServer.db.Get(swid, function (err, swnodes) {
+                        var software = (swnodes && swnodes.length > 0) ? swnodes[0] : null;
+
+                        // Konsolidacija podataka (ako nečeg nema, padamo nazad na osnovni node)
+                        var hw = sysinfo ? (sysinfo.data || sysinfo.hwinfo || sysinfo) : node.hwinfo;
+                        var sw = software ? (software.data || software.apps || software.software || software) : node.software;
+                        
+                        var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+
+                        // --------------------------------------------------------
+                        // CSV Generiranje
+                        // --------------------------------------------------------
+                        if (req.query.download === 'csv') {
+                            var csv = "Kategorija,Svojstvo,Vrijednost\n";
+                            csv += "Osnovno,Ime," + (node.name || 'Nepoznato') + "\n";
+                            csv += "Osnovno,Opis," + (node.desc || '') + "\n";
+                            csv += "Osnovno,OS," + (node.osdesc || node.mtype || '') + "\n";
+                            
+                            if (sw) {
+                                var swList = sw.apps || sw; 
+                                if (Array.isArray(swList)) {
+                                    swList.forEach(function(app) {
+                                        var appName = (app.name || app.N || 'Nepoznato').replace(/,/g, ' '); 
+                                        var appVer = (app.version || app.V || '').replace(/,/g, ' ');
+                                        csv += "Softver," + appName + "," + appVer + "\n";
+                                    });
+                                } else {
+                                    csv += "Softver,Napomena,Pronađen je nestandardni format softvera\n";
+                                }
+                            } else {
+                                csv += "Softver,Napomena,Agent još nije sinkronizirao softver u bazu\n";
+                            }
+
+                            res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_export.csv');
+                            res.setHeader('Content-type', 'text/csv; charset=utf-8');
+                            res.send(csv);
+                        } 
+                        // --------------------------------------------------------
+                        // TXT Generiranje
+                        // --------------------------------------------------------
+                        else if (req.query.download === 'ticket') {
+                            var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
+                            txt += "MC_NODE_ID: " + node._id + "\n";
+                            txt += "HOSTNAME: " + (node.name || 'N/A') + "\n";
+                            txt += "OS_TYPE: " + (node.osdesc || node.mtype || 'N/A') + "\n";
+                            txt += "DESCRIPTION: " + (node.desc || 'N/A') + "\n";
+                            
+                            if (node.host) txt += "LAST_IP: " + node.host + "\n";
+                            
+                            txt += "\n--- HARDWARE ---\n";
+                            if (hw) {
+                                txt += JSON.stringify(hw, null, 2) + "\n";
+                            } else {
+                                txt += "Nema hardverskih podataka u bazi.\n";
+                            }
+
+                            txt += "\n--- SOFTWARE ---\n";
+                            if (sw) {
+                                txt += JSON.stringify(sw, null, 2) + "\n";
+                            } else {
+                                txt += "Nema softverskih podataka u bazi.\n";
+                            }
+
+                            txt += "\n=== END OF EXPORT ===\n";
+
+                            res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_ticket.txt');
+                            res.setHeader('Content-type', 'text/plain; charset=utf-8');
+                            res.send(txt);
                         }
-                    } else {
-                        csv += "Softver,Napomena,Agent još nije sinkronizirao softver u bazu\n";
-                    }
-
-                    res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_export.csv');
-                    res.setHeader('Content-type', 'text/csv; charset=utf-8');
-                    res.send(csv);
-                } 
-                // --------------------------------------------------------
-                // 2. TXT Generiranje
-                // --------------------------------------------------------
-                else if (req.query.download === 'ticket') {
-                    var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
-                    txt += "MC_NODE_ID: " + node._id + "\n";
-                    txt += "HOSTNAME: " + (node.name || 'N/A') + "\n";
-                    txt += "OS_TYPE: " + (node.osdesc || node.mtype || 'N/A') + "\n";
-                    txt += "DESCRIPTION: " + (node.desc || 'N/A') + "\n";
-                    
-                    if (node.host) txt += "LAST_IP: " + node.host + "\n";
-                    
-                    txt += "\n--- HARDWARE ---\n";
-                    if (hw) {
-                        txt += JSON.stringify(hw, null, 2) + "\n";
-                    } else {
-                        txt += "Nema hardverskih podataka u bazi.\n";
-                    }
-
-                    txt += "\n--- SOFTWARE ---\n";
-                    if (sw) {
-                        txt += JSON.stringify(sw, null, 2) + "\n";
-                    } else {
-                        txt += "Nema softverskih podataka u bazi.\n";
-                    }
-
-                    txt += "\n=== END OF EXPORT ===\n";
-
-                    res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_ticket.txt');
-                    res.setHeader('Content-type', 'text/plain; charset=utf-8');
-                    res.send(txt);
-                }
+                    });
+                });
             });
         } else {
             res.sendStatus(404);
