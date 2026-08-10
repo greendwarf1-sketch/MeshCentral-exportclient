@@ -10,31 +10,23 @@ module.exports.exportclient = function (parent) {
     obj.parent = parent;
     obj.meshServer = parent.parent;
 
+    // OVDJE JE BIO PROBLEM: Moramo prijaviti serverStartup MeshCentralu!
     obj.exports = [
-        'onDeviceRefreshEnd'
+        'onDeviceRefreshEnd',
+        'serverStartup' 
     ];
 
     // ====================================================================
-    // FRONT-END: WEB UI HOOK (S ugrađenim logovima za traženje grešaka)
+    // FRONT-END: WEB UI HOOK
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
-        console.log("ExportClient [TEST 1]: Pokrenut onDeviceRefreshEnd funkcija!");
-
-        if (typeof currentNode == 'undefined' || currentNode == null) {
-            console.log("ExportClient [GREŠKA]: Nema odabranog računala (currentNode je prazan).");
-            return;
-        }
+        if (typeof currentNode == 'undefined' || currentNode == null) return;
         var nodeId = currentNode._id;
-        console.log("ExportClient [TEST 2]: Trenutni node ID prepoznat -> " + nodeId);
 
         var p19 = document.getElementById('p19');
-        if (!p19) {
-            console.log("ExportClient [GREŠKA]: Ne mogu pronaći kontejner 'p19'!");
-            return;
-        }
+        if (!p19) return;
 
         if (document.getElementById('nav-exportclient')) {
-            console.log("ExportClient [TEST 3]: Gumb već postoji na ekranu, samo osvježavam Node ID.");
             document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv/' + encodeURIComponent(nodeId); };
             document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket/' + encodeURIComponent(nodeId); };
             return;
@@ -42,12 +34,10 @@ module.exports.exportclient = function (parent) {
 
         var pluginNav = null;
         var links = p19.getElementsByTagName('a');
-        console.log("ExportClient [TEST 4]: Tražim postojeći izbornik drugih pluginova...");
         
         for (var i = 0; i < links.length; i++) {
             if (links[i].innerHTML.indexOf('ScriptTask') !== -1 || links[i].innerHTML.indexOf('Work From Home') !== -1 || links[i].innerHTML.indexOf('Event Log') !== -1) {
                 pluginNav = links[i].parentNode;
-                console.log("ExportClient [TEST 5]: Uspješno zakačen na postojeći meni.");
                 break;
             }
         }
@@ -103,14 +93,12 @@ module.exports.exportclient = function (parent) {
 
         document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv/' + encodeURIComponent(nodeId); };
         document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket/' + encodeURIComponent(nodeId); };
-        
-        console.log("ExportClient [TEST 6]: SVE JE USPJEŠNO ODRAĐENO!");
     };
 
     // ====================================================================
-    // BACK-END: SERVER HOOK (Generiranje datoteka)
+    // BACK-END: SERVER HOOK (Službeni naziv mora biti serverStartup)
     // ====================================================================
-    obj.server_startup = function () {
+    obj.serverStartup = function () {
         
         // RUTA 1: CSV EXPORT
         obj.meshServer.app.get('/plugin/exportclient/csv/:nodeid', function (req, res) {
