@@ -3,7 +3,6 @@
  * Copyright (C) 2026 Mr. Green & MCS
  * 
  * exportclient.js - Kompatibilno s Ryan Blenis arhitekturom
- * ISpravak: Korištenje URL parametara (?node=) umjesto putanje
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -11,9 +10,9 @@ module.exports.exportclient = function (parent) {
     obj.parent = parent;
     obj.meshServer = parent.parent;
 
+    // U exports ide ISKLJUČIVO front-end funkcija.
     obj.exports = [
-        'onDeviceRefreshEnd',
-        'serverStartup' 
+        'onDeviceRefreshEnd'
     ];
 
     // ====================================================================
@@ -26,7 +25,7 @@ module.exports.exportclient = function (parent) {
         var p19 = document.getElementById('p19');
         if (!p19) return;
 
-        // Osvježavanje postojećih tipki s novom Query (?node=) metodom
+        // Osvježavanje tipki (kreira savršeno kodiran ?node= link)
         if (document.getElementById('nav-exportclient')) {
             document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
             document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
@@ -92,21 +91,21 @@ module.exports.exportclient = function (parent) {
             myPanel.style.display = 'block';
         };
 
-        // Tipke sada otvaraju URL formatiran sa znako upitnika (?node=)
+        // Dodjela on-click akcija koje gađaju nove ?node= rute
         document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
         document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
     };
 
     // ====================================================================
-    // BACK-END: SERVER HOOK 
+    // BACK-END: SERVER HOOK (Službeni naziv je server_startup)
     // ====================================================================
-    obj.serverStartup = function () {
+    obj.server_startup = function () {
         
-        // RUTA 1: CSV EXPORT (Sada nema :nodeid u ruti)
+        // RUTA 1: CSV EXPORT
         obj.meshServer.app.get('/plugin/exportclient/csv', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
-            // Node ID čitamo iz parametra
+            // Preuzimamo node varijablu iz Query linka
             var nodeid = req.query.node;
             if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
 
@@ -142,6 +141,7 @@ module.exports.exportclient = function (parent) {
         obj.meshServer.app.get('/plugin/exportclient/ticket', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
+            // Preuzimamo node varijablu iz Query linka
             var nodeid = req.query.node;
             if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
 
