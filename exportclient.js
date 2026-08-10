@@ -3,6 +3,7 @@
  * Copyright (C) 2026 Mr. Green & MCS
  * 
  * exportclient.js - Kompatibilno s Ryan Blenis arhitekturom
+ * ISpravak: Korištenje URL parametara (?node=) umjesto putanje
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -10,7 +11,6 @@ module.exports.exportclient = function (parent) {
     obj.parent = parent;
     obj.meshServer = parent.parent;
 
-    // OVDJE JE BIO PROBLEM: Moramo prijaviti serverStartup MeshCentralu!
     obj.exports = [
         'onDeviceRefreshEnd',
         'serverStartup' 
@@ -26,9 +26,10 @@ module.exports.exportclient = function (parent) {
         var p19 = document.getElementById('p19');
         if (!p19) return;
 
+        // Osvježavanje postojećih tipki s novom Query (?node=) metodom
         if (document.getElementById('nav-exportclient')) {
-            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv/' + encodeURIComponent(nodeId); };
-            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket/' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
             return;
         }
 
@@ -91,20 +92,24 @@ module.exports.exportclient = function (parent) {
             myPanel.style.display = 'block';
         };
 
-        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv/' + encodeURIComponent(nodeId); };
-        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket/' + encodeURIComponent(nodeId); };
+        // Tipke sada otvaraju URL formatiran sa znako upitnika (?node=)
+        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/csv?node=' + encodeURIComponent(nodeId); };
+        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/exportclient/ticket?node=' + encodeURIComponent(nodeId); };
     };
 
     // ====================================================================
-    // BACK-END: SERVER HOOK (Službeni naziv mora biti serverStartup)
+    // BACK-END: SERVER HOOK 
     // ====================================================================
     obj.serverStartup = function () {
         
-        // RUTA 1: CSV EXPORT
-        obj.meshServer.app.get('/plugin/exportclient/csv/:nodeid', function (req, res) {
+        // RUTA 1: CSV EXPORT (Sada nema :nodeid u ruti)
+        obj.meshServer.app.get('/plugin/exportclient/csv', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
-            var nodeid = decodeURIComponent(req.params.nodeid);
+            // Node ID čitamo iz parametra
+            var nodeid = req.query.node;
+            if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
+
             obj.meshServer.db.Get(nodeid, function (err, nodes) {
                 if (err || !nodes || nodes.length !== 1) return res.status(404).send('Računalo nije pronađeno.');
                 
@@ -134,10 +139,12 @@ module.exports.exportclient = function (parent) {
         });
 
         // RUTA 2: TICKETING (TXT) EXPORT
-        obj.meshServer.app.get('/plugin/exportclient/ticket/:nodeid', function (req, res) {
+        obj.meshServer.app.get('/plugin/exportclient/ticket', function (req, res) {
             if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
-            var nodeid = decodeURIComponent(req.params.nodeid);
+            var nodeid = req.query.node;
+            if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
+
             obj.meshServer.db.Get(nodeid, function (err, nodes) {
                 if (err || !nodes || nodes.length !== 1) return res.status(404).send('Računalo nije pronađeno.');
                 
