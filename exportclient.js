@@ -201,29 +201,36 @@ module.exports.exportclient = function (parent) {
                         if (Array.isArray(swnodes) && swnodes.length > 0) software = swnodes[0];
                         else if (swnodes && !Array.isArray(swnodes) && swnodes._id) software = swnodes;
 
-// Pokušaj izvući iz baze na sve poznate načine (uključujući novu .public strukturu)
+// Pokušaj izvući iz baze ili glavnog Node objekta (više varijacija)
 var hw = null;
 var sw = null;
 
-if (sysinfo) {
-    hw = sysinfo.public ? sysinfo.public : (sysinfo.data || sysinfo.hwinfo || sysinfo);
-}
-if (software) {
-    sw = software.public ? software.public : (software.data || software.apps || software.software || software);
-}
+if (sysinfo) hw = sysinfo.public || sysinfo.data || sysinfo.hwinfo || sysinfo;
+if (software) sw = software.public || software.data || software.apps || software.software || software;
 
-// Pokušaj izvući direktno iz RAM-a ako je računalo trenutno online (kao VUK)
+if (!hw && node) hw = node.hwinfo || node.hardware || node.sysinfo;
+if (!sw && node) sw = node.software || node.swinfo || node.apps;
+
+// Pokušaj izvući direktno iz RAM-a aktivnog agenta
 var wsagents = obj.meshServer.webserver.wsagents;
-if (wsagents && wsagents[nodeid]) {
-    var agent = wsagents[nodeid];
-    if (!hw) hw = agent.hwinfo || (agent.public ? agent.public.hwinfo : null);
-    if (!sw) sw = agent.software || (agent.public ? agent.public.software : null);
+var agent = wsagents ? wsagents[nodeid] : null;
+if (agent) {
+    if (!hw) hw = agent.hwinfo || agent.hardware || agent.sysinfo;
+    if (!sw) sw = agent.software || agent.swinfo || agent.apps;
 }
 
-// Ako i dalje apsolutno ništa ne pronađe, šaljemo cijele RAW objekte iz baze
-// kako bismo u PHP logu vidjeli točnu strukturu!
-if (!hw) hw = { "debug_sysinfo": sysinfo };
-if (!sw) sw = { "debug_software": software };
+// AKO JE I DALJE NULL - DUMPAMO STRUKTURU DA VIDIMO GDJE SE KRIJU PODACI
+if (!hw || !sw) {
+    var debugInfo = {
+        "sysinfo_u_bazi": !!sysinfo,
+        "software_u_bazi": !!software,
+        "node_kljucevi": node ? Object.keys(node).join(", ") : "nema",
+        "agent_u_ramu": !!agent,
+        "agent_kljucevi": agent ? Object.keys(agent).join(", ") : "nema"
+    };
+    if (!hw) hw = { "DEBUG_TRAG": debugInfo };
+    if (!sw) sw = { "DEBUG_TRAG": debugInfo };
+}
 
                         var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
