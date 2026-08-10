@@ -2,7 +2,7 @@
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
  * 
- * exportclient.js - Čisto Front-End Rješenje (Bypass 404 Greške)
+ * exportclient.js - Backend Full Export (Bypass 404 & Lazy Loading)
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -14,18 +14,23 @@ module.exports.exportclient = function (parent) {
         'onDeviceRefreshEnd'
     ];
 
+    // ====================================================================
+    // FRONT-END: WEB UI HOOK
+    // ====================================================================
     obj.onDeviceRefreshEnd = function () {
-        // Preskačemo ako nema otvorenog računala
         if (typeof currentNode == 'undefined' || currentNode == null) return;
-        
+        var nodeId = currentNode._id;
+
         var p19 = document.getElementById('p19');
         if (!p19) return;
 
-        // Sprječavanje duplikata - ako panel već postoji, prekidamo (tipke će same uzeti svježe podatke)
-        var myPanel = document.getElementById('panel-exportclient');
-        if (myPanel) return; 
+        // Osvježavanje postojećih tipki s novom /mTicketExport/ rutom
+        if (document.getElementById('nav-exportclient')) {
+            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/mTicketExport/csv?node=' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/mTicketExport/ticket?node=' + encodeURIComponent(nodeId); };
+            return;
+        }
 
-        // 1. Pronalazak menija ostalih pluginova (Ryan Blenis stil)
         var pluginNav = null;
         var links = p19.getElementsByTagName('a');
         for (var i = 0; i < links.length; i++) {
@@ -35,7 +40,6 @@ module.exports.exportclient = function (parent) {
             }
         }
 
-        // Ako nema drugih pluginova, mi crtamo prvi izbornik
         if (!pluginNav) {
             pluginNav = document.createElement('div');
             pluginNav.id = 'pluginNav';
@@ -49,7 +53,6 @@ module.exports.exportclient = function (parent) {
             }
         }
 
-        // Dodavanje našeg linka uz separator
         if (pluginNav.children.length > 0) {
             var sep = document.createElement('span');
             sep.innerHTML = ' <span style="color:#888;">|</span> ';
@@ -63,21 +66,19 @@ module.exports.exportclient = function (parent) {
         myLink.style.cursor = 'pointer';
         pluginNav.appendChild(myLink);
 
-        // 2. Kreiranje panela s tipkama
-        myPanel = document.createElement('div');
+        var myPanel = document.createElement('div');
         myPanel.id = 'panel-exportclient';
         myPanel.style.display = 'none';
-        myPanel.innerHTML = `
-            <div style="border:1px solid #ddd; padding:20px; border-radius:5px; background-color:#f9f9f9; margin-top:15px;">
-                <h4 style="margin-top:0; color:#333; font-weight:bold;">mTicket Client Export</h4>
-                <p style="font-size:13px; color:#666; margin-bottom:15px;">Brzo preuzmite hardversku specifikaciju i popis softvera direktno iz preglednika.</p>
-                <button id="btn-export-csv" class="btn btn-secondary btn-sm" style="margin-right:10px;">Preuzmi CSV</button>
-                <button id="btn-export-ticket" class="btn btn-primary btn-sm">Preuzmi TXT (Ticketing)</button>
-            </div>
-        `;
+        
+        // Crtanje panela 
+        myPanel.innerHTML = '<div style="border:1px solid #ddd; padding:20px; border-radius:5px; background-color:#f9f9f9; margin-top:15px;">' +
+                            '<h4 style="margin-top:0; color:#333; font-weight:bold;">mTicket Client Export</h4>' +
+                            '<p style="font-size:13px; color:#666; margin-bottom:15px;">Preuzmite POTPUNU hardversku specifikaciju i popis softvera izravno iz baze podataka.</p>' +
+                            '<button id="btn-export-csv" class="btn btn-secondary btn-sm" style="margin-right:10px;">Preuzmi CSV</button>' +
+                            '<button id="btn-export-ticket" class="btn btn-primary btn-sm">Preuzmi TXT (Ticketing)</button>' +
+                            '</div>';
         p19.appendChild(myPanel);
 
-        // Prebacivanje prikaza
         myLink.onclick = function(e) {
             e.preventDefault();
             for (var i = 0; i < p19.children.length; i++) {
@@ -88,71 +89,87 @@ module.exports.exportclient = function (parent) {
             myPanel.style.display = 'block';
         };
 
-        // ====================================================================
-        // FRONT-END DOWNLOAD GENERATOR (Izrada datoteka bez servera)
-        // ====================================================================
-        function downloadFile(filename, content, type) {
-            var blob = new Blob([content], { type: type });
-            var url = window.URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(function() {
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-            }, 100);
-        }
+        // Tipke sada gađaju našu novu rutu
+        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/mTicketExport/csv?node=' + encodeURIComponent(nodeId); };
+        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/mTicketExport/ticket?node=' + encodeURIComponent(nodeId); };
+    };
 
-        // KLIK NA CSV GUMB
-        document.getElementById('btn-export-csv').onclick = function(e) { 
-            e.preventDefault();
-            var n = currentNode; // Trenutno otvoreno računalo u pregledniku
-            var safeName = (n.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            
-            var csv = "Kategorija,Svojstvo,Vrijednost\n";
-            csv += "Osnovno,Ime," + (n.name || 'Nepoznato') + "\n";
-            csv += "Osnovno,Opis," + (n.desc || '') + "\n";
-            csv += "Osnovno,OS," + (n.osdesc || n.mtype || '') + "\n";
-            
-            if (n.software) {
-                var swList = n.software.apps || n.software;
-                if (Array.isArray(swList)) {
-                    swList.forEach(function(app) {
-                        var appName = (app.name || app.N || 'Nepoznato').replace(/,/g, ' '); 
-                        var appVer = (app.version || app.V || '').replace(/,/g, ' ');
-                        csv += "Softver," + appName + "," + appVer + "\n";
-                    });
+    // ====================================================================
+    // BACK-END: SERVER HOOK (Vađenje direktno iz Baze Podataka)
+    // ====================================================================
+    obj.server_startup = function () {
+        
+        // RUTA 1: CSV EXPORT (Custom putanja koja zaobilazi 404 filtere)
+        obj.meshServer.app.get('/mTicketExport/csv', function (req, res) {
+            if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
+
+            var nodeid = req.query.node;
+            if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
+
+            obj.meshServer.db.Get(nodeid, function (err, nodes) {
+                if (err || !nodes || nodes.length !== 1) return res.status(404).send('Računalo nije pronađeno u bazi.');
+                
+                var node = nodes[0];
+                var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                
+                var csv = "Kategorija,Svojstvo,Vrijednost\n";
+                csv += "Osnovno,Ime," + (node.name || 'Nepoznato') + "\n";
+                csv += "Osnovno,Opis," + (node.desc || '') + "\n";
+                csv += "Osnovno,OS," + (node.osdesc || node.mtype || '') + "\n";
+                
+                if (node.software) {
+                    var swList = node.software.apps || node.software;
+                    if (Array.isArray(swList)) {
+                        swList.forEach(function(app) {
+                            var appName = (app.name || app.N || 'Nepoznato').replace(/,/g, ' '); 
+                            var appVer = (app.version || app.V || '').replace(/,/g, ' ');
+                            csv += "Softver," + appName + "," + appVer + "\n";
+                        });
+                    }
+                } else {
+                    csv += "Softver,Nema podataka,Agent ih još nije poslao\n";
                 }
-            }
 
-            downloadFile(safeName + '_export.csv', csv, 'text/csv;charset=utf-8;');
-        };
+                res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_export.csv');
+                res.setHeader('Content-type', 'text/csv; charset=utf-8');
+                res.send(csv);
+            });
+        });
 
-        // KLIK NA TXT GUMB
-        document.getElementById('btn-export-ticket').onclick = function(e) { 
-            e.preventDefault();
-            var n = currentNode;
-            var safeName = (n.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            
-            var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
-            txt += "MC_NODE_ID: " + n._id + "\n";
-            txt += "HOSTNAME: " + (n.name || 'N/A') + "\n";
-            txt += "OS_TYPE: " + (n.osdesc || n.mtype || 'N/A') + "\n";
-            txt += "DESCRIPTION: " + (n.desc || 'N/A') + "\n";
-            
-            if (n.host) txt += "LAST_IP: " + n.host + "\n";
-            
-            txt += "--- HARDWARE ---\n";
-            // Povlačimo hardware JSON stablo direktno iz memorije preglednika
-            var hw = n.hwinfo || n.coreinfo || 'Nema hardverskih podataka';
-            txt += typeof hw === 'object' ? JSON.stringify(hw, null, 2) : hw;
-            txt += "\n=== END OF EXPORT ===\n";
+        // RUTA 2: TICKETING (TXT) EXPORT
+        obj.meshServer.app.get('/mTicketExport/ticket', function (req, res) {
+            if (!req.session || !req.session.userid) return res.status(401).send('Pristup odbijen.');
 
-            downloadFile(safeName + '_ticket.txt', txt, 'text/plain;charset=utf-8;');
-        };
+            var nodeid = req.query.node;
+            if (!nodeid) return res.status(400).send('Nedostaje Node ID u URL-u.');
+
+            obj.meshServer.db.Get(nodeid, function (err, nodes) {
+                if (err || !nodes || nodes.length !== 1) return res.status(404).send('Računalo nije pronađeno u bazi.');
+                
+                var node = nodes[0];
+                var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                
+                var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
+                txt += "MC_NODE_ID: " + node._id + "\n";
+                txt += "HOSTNAME: " + (node.name || 'N/A') + "\n";
+                txt += "OS_TYPE: " + (node.osdesc || node.mtype || 'N/A') + "\n";
+                txt += "DESCRIPTION: " + (node.desc || 'N/A') + "\n";
+                
+                if (node.host) txt += "LAST_IP: " + node.host + "\n";
+                
+                txt += "--- HARDWARE ---\n";
+                if (node.hwinfo) {
+                    txt += JSON.stringify(node.hwinfo, null, 2) + "\n";
+                } else {
+                    txt += "Nema hardverskih podataka u bazi.\n";
+                }
+                txt += "=== END OF EXPORT ===\n";
+
+                res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_ticket.txt');
+                res.setHeader('Content-type', 'text/plain; charset=utf-8');
+                res.send(txt);
+            });
+        });
     };
 
     return obj;
