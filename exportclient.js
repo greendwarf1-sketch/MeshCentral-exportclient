@@ -39,35 +39,71 @@ module.exports.exportclient = function (parent) {
             
             var hwData = null;
             var swData = null;
-            
-            if (typeof systemInfo !== 'undefined' && systemInfo[nodeId]) hwData = systemInfo[nodeId];
-            if (typeof softwareInfo !== 'undefined' && softwareInfo[nodeId]) swData = softwareInfo[nodeId];
 
+            // 1. Pokušaj čitanja iz direktnog node objekta
+            if (currentNode) {
+                hwData = currentNode.hwinfo || currentNode.hardware || currentNode.sysinfo;
+                swData = currentNode.software || currentNode.swinfo || currentNode.apps;
+            }
+
+            // 2. AUTO-DISCOVERY RAM SKENIRANJE
             if (!hwData || !swData) {
-                var ans = confirm("⚠️ Hardver ili softver još nisu učitani u memoriju!\n\nMolimo vas da prvo kliknete na kartice 'Hardware' i 'Software' na vrhu ekrana kako bi se podaci povukli s računala, a zatim pokušajte ponovno.\n\nŽelite li svejedno poslati nepotpune podatke?");
-                if (!ans) return;
+                for (var key in window) {
+                    try {
+                        if (window[key] && typeof window[key] === 'object' && window[key][nodeId]) {
+                            var val = window[key][nodeId];
+                            if (!swData && (key.toLowerCase().indexOf('soft') > -1 || (Array.isArray(val) && val.length > 5))) swData = val;
+                            if (!hwData && (key.toLowerCase().indexOf('sys') > -1 || key.toLowerCase().indexOf('hw') > -1 || val.netinfo || val.cpu)) hwData = val;
+                        }
+                    } catch(err) {}
+                }
+            }
+
+            var payloadStr = "";
+            try {
+                // Pakiramo podatke (ili prazne objekte ako preglednik zablokira pristup)
+                payloadStr = JSON.stringify({ 
+                    nodeId: nodeId, 
+                    hw: hwData || { "INFO": "Nije pronađeno u UI" }, 
+                    sw: swData || { "INFO": "Nije pronađeno u UI" } 
+                });
+            } catch(e) {
+                alert("❌ Greška pri pakiranju podataka (Cirkularna referenca): " + e.message);
+                return;
             }
 
             var originalText = btn.innerHTML;
             btn.innerHTML = '⏳ Slanje...';
             btn.disabled = true;
 
+            // 3. SIGURNI FETCH (s uključivanjem session cookija i detekcijom svih Nginx grešaka)
             fetch('/pluginadmin.ashx?pin=exportclient&action=send_api_post', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ nodeId: nodeId, hw: hwData, sw: swData })
+                credentials: 'same-origin', // OVO JE BILO KLJUČNO ZA RJEŠAVANJE 401 GREŠAKA
+                body: payloadStr
             })
-            .then(function(res) { return res.json(); })
+            .then(function(res) {
+                // Umjesto slijepog vjerovanja da je sve JSON, prvo čitamo raw text
+                return res.text().then(function(text) {
+                    try {
+                        return JSON.parse(text); // Pokušaj parsirati JSON
+                    } catch (e) {
+                        // Ako Nginx vrati HTML stranicu s greškom (npr. 413, 502, 500)
+                        throw new Error("HTTP Kod: " + res.status + "\nOdgovor: " + text.substring(0, 150));
+                    }
+                });
+            })
             .then(function(data) {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
                 if (data.success) alert('✅ Podaci o računalu su uspješno sinkronizirani u mTicket bazu!');
-                else alert('❌ Greška pri slanju u mTicket: ' + data.error);
+                else alert('❌ Greška poslužitelja: ' + data.error);
             })
             .catch(function(err) {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-                alert('❌ Mrežna greška prilikom komunikacije sa serverom.');
+                alert('❌ DETALJNA GREŠKA:\n' + err.message);
             });
         };
 
@@ -145,7 +181,7 @@ module.exports.exportclient = function (parent) {
     // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         
-        // 1. API SYNC
+        // 1. API SYNC (NOVI POST PRISTUP)
         if (req.query.action === 'send_api_post') {
             res.setHeader('Content-Type', 'application/json');
             
@@ -214,21 +250,36 @@ module.exports.exportclient = function (parent) {
                 });
             };
 
+            // BACKEND OSIGURAČ: Ako je body prazan, nećemo zapeti u beskonačno učitavanje
             if (req.body && Object.keys(req.body).length > 0) {
                 processSync(req.body);
+            } else if (typeof req.body === 'string' && req.body.length > 0) {
+                try { processSync(JSON.parse(req.body)); }
+                catch (e) { res.send(JSON.stringify({ success: false, error: 'Greška u parse stringa' })); }
             } else {
                 var bodyData = '';
-                req.on('data', function(chunk) { bodyData += chunk; });
+                var hasData = false;
+                
+                req.on('data', function(chunk) { hasData = true; bodyData += chunk; });
                 req.on('end', function() {
-                    try { processSync(JSON.parse(bodyData)); } 
-                    catch (e) { res.send(JSON.stringify({ success: false, error: 'Greška pri parsiranju podataka.' })); }
+                    if (hasData) {
+                        try { processSync(JSON.parse(bodyData)); } 
+                        catch (e) { res.send(JSON.stringify({ success: false, error: 'Greška pri parsiranju RAW JSON podataka.' })); }
+                    }
                 });
+
+                // Timeout ako stream visi
+                setTimeout(function() {
+                    if (!hasData && !res.headersSent) {
+                        res.send(JSON.stringify({ success: false, error: 'Prazan zahtjev.' }));
+                    }
+                }, 2000);
             }
             return;
         }
 
         // --------------------------------------------------------
-        // 2. CSV i TXT GENERIRANJE
+        // 2. CSV i TXT GENERIRANJE (Stari pristup iz baze)
         // --------------------------------------------------------
         if (req.query.download === 'csv' || req.query.download === 'ticket') {
             
@@ -244,7 +295,6 @@ module.exports.exportclient = function (parent) {
                 else callback("Nije pronađena db.Get funkcija", null);
             };
 
-            // Ponovno otvaramo traženje po bazi kako bi radilo kao prije
             safeDbGet(nodeid, function (err, nodes) {
                 var node = null;
                 if (Array.isArray(nodes) && nodes.length > 0) node = nodes[0];
