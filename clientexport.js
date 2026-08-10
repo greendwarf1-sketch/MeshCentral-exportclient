@@ -1,8 +1,8 @@
 'use strict';
 /**********************************************************************
- * Copyright (C) 2026 Mr. Green
+ * Copyright (C) 2026 Mr. Green & MCS
  * 
- * clientexport.js - Plugin prema službenoj MeshCentral arhitekturi
+ * clientexport.js - Integracija u Plugins tab (p19)
  **********************************************************************/
 
 module.exports.clientexport = function (parent) {
@@ -22,60 +22,63 @@ module.exports.clientexport = function (parent) {
         if (typeof currentNode == 'undefined' || currentNode == null) return;
         var nodeId = currentNode._id;
 
-        // Ciljamo isključivo kontejner "Plugins" taba
-        var targetContainer = document.getElementById('pluginPanel'); 
-        if (!targetContainer) targetContainer = document.getElementById('devicePluginPanel');
-        
-        if (targetContainer) {
-            // Sprječavanje duplikata: Ako je naša kućica već tu, samo ažuriramo nodeID
-            var existingBox = document.getElementById('clientExportBox');
-            if (existingBox) {
-                document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
-                document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
-                return;
-            }
+        // p19 je fiksni kontejner za karticu "Plugins" u MeshCentralu
+        var p19 = document.getElementById('p19');
+        if (!p19) return;
 
-            // Kreiramo vlastiti vizualni blok (Card) unutar Plugins taba
-            var exportBox = document.createElement('div');
-            exportBox.id = 'clientExportBox';
-            exportBox.style.border = '1px solid #ccc';
-            exportBox.style.padding = '15px';
-            exportBox.style.margin = '10px 0 20px 0';
-            exportBox.style.backgroundColor = '#f9f9f9';
-            exportBox.style.borderRadius = '4px';
-
-            // Tekst unutar našeg panela
-            exportBox.innerHTML = '<h4 style="margin-top:0; color:#333; font-weight:bold;">Client Export (mTicket)</h4>' +
-                                  '<p style="font-size:13px; color:#666; margin-bottom:15px;">Preuzmite hardverske podatke i popis softvera za ovaj uređaj.</p>';
-
-            // Kreiranje tipke za CSV
-            var btnCsv = document.createElement('button');
-            btnCsv.id = 'btn-export-csv';
-            btnCsv.innerHTML = '📥 Export CSV';
-            btnCsv.className = 'btn btn-default btn-sm'; 
-            btnCsv.style.marginRight = '10px';
-            btnCsv.onclick = function(e) {
-                e.preventDefault();
-                window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId);
-            };
-
-            // Kreiranje tipke za Ticketing (TXT)
-            var btnTicket = document.createElement('button');
-            btnTicket.id = 'btn-export-ticket';
-            btnTicket.innerHTML = '🎫 Export u Ticketing';
-            btnTicket.className = 'btn btn-primary btn-sm';
-            btnTicket.onclick = function(e) {
-                e.preventDefault();
-                window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId);
-            };
-
-            // Spajamo tipke u našu kućicu
-            exportBox.appendChild(btnCsv);
-            exportBox.appendChild(btnTicket);
-
-            // Ubacujemo našu kućicu na sam vrh Plugins taba (iznad ScriptTaska i ostalih)
-            targetContainer.insertBefore(exportBox, targetContainer.firstChild);
+        // Sprječavamo dupliciranje kućice pri prebacivanju između računala
+        var existingBox = document.getElementById('clientExportBox');
+        if (existingBox) {
+            // Samo ažuriramo linkove s ID-em novog računala
+            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); };
+            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); };
+            return;
         }
+
+        // Kreiramo modernu kućicu (Bootstrap Card) koja prati dizajn MeshCentrala
+        var exportBox = document.createElement('div');
+        exportBox.id = 'clientExportBox';
+        exportBox.className = 'card mb-3 mt-3'; // Bootstrap margine
+        exportBox.style.marginLeft = '10px';
+        exportBox.style.marginRight = '10px';
+        exportBox.style.borderTop = '3px solid #0d6efd'; // Plava traka na vrhu za vizualni naglasak
+        exportBox.style.boxShadow = '0 2px 5px rgba(0,0,0,0.05)';
+
+        // Unutarnji HTML kućice s ugrađenim FontAwesome ikonama
+        exportBox.innerHTML = `
+            <div class="card-body">
+                <h5 class="card-title text-primary" style="font-weight:bold;">
+                    <i class="fa-solid fa-file-export me-2"></i> mTicket Client Export
+                </h5>
+                <p class="card-text" style="font-size:13px; color:#666;">
+                    Brzo preuzmite hardversku specifikaciju i popis instaliranog softvera za ovaj uređaj.
+                </p>
+                <button id="btn-export-csv" class="btn btn-secondary btn-sm me-2">
+                    <i class="fa-solid fa-file-csv me-1"></i> Preuzmi CSV
+                </button>
+                <button id="btn-export-ticket" class="btn btn-primary btn-sm">
+                    <i class="fa-solid fa-file-lines me-1"></i> Preuzmi TXT (mTicket)
+                </button>
+            </div>
+        `;
+
+        // Ubacujemo našu kućicu na sam vrh Plugins taba (odmah ispod naslova)
+        var p19title = document.getElementById('p19title');
+        if (p19title && p19title.nextSibling) {
+            p19.insertBefore(exportBox, p19title.nextSibling);
+        } else {
+            p19.insertBefore(exportBox, p19.firstChild);
+        }
+
+        // Dodjeljujemo funkcionalnosti gumbima NAKON što su ubačeni na ekran
+        document.getElementById('btn-export-csv').onclick = function(e) { 
+            e.preventDefault(); 
+            window.location.href = '/plugin/clientexport/csv/' + encodeURIComponent(nodeId); 
+        };
+        document.getElementById('btn-export-ticket').onclick = function(e) { 
+            e.preventDefault(); 
+            window.location.href = '/plugin/clientexport/ticket/' + encodeURIComponent(nodeId); 
+        };
     };
 
     // ====================================================================
@@ -95,9 +98,9 @@ module.exports.clientexport = function (parent) {
                 var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
                 
                 var csv = "Kategorija,Svojstvo,Vrijednost\n";
-                csv += `Osnovno,Ime,${node.name || 'Nepoznato'}\n`;
-                csv += `Osnovno,Opis,${node.desc || ''}\n`;
-                csv += `Osnovno,OS,${node.mtype || ''}\n`;
+                csv += \`Osnovno,Ime,\${node.name || 'Nepoznato'}\n\`;
+                csv += \`Osnovno,Opis,\${node.desc || ''}\n\`;
+                csv += \`Osnovno,OS,\${node.mtype || ''}\n\`;
                 
                 if (node.software) {
                     var swList = node.software.apps || node.software;
@@ -105,7 +108,7 @@ module.exports.clientexport = function (parent) {
                         swList.forEach(function(app) {
                             var appName = (app.name || app.N || 'Nepoznato').replace(/,/g, ' '); 
                             var appVer = (app.version || app.V || '').replace(/,/g, ' ');
-                            csv += `Softver,${appName},${appVer}\n`;
+                            csv += \`Softver,\${appName},\${appVer}\n\`;
                         });
                     }
                 }
@@ -128,20 +131,20 @@ module.exports.clientexport = function (parent) {
                 var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
                 
                 var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
-                txt += "MC_NODE_ID: " + node._id + "\n";
-                txt += "HOSTNAME: " + (node.name || 'N/A') + "\n";
-                txt += "OS_TYPE: " + (node.mtype || 'N/A') + "\n";
-                txt += "DESCRIPTION: " + (node.desc || 'N/A') + "\n";
+                txt += "MC_NODE_ID: " + node._id + "\\n";
+                txt += "HOSTNAME: " + (node.name || 'N/A') + "\\n";
+                txt += "OS_TYPE: " + (node.mtype || 'N/A') + "\\n";
+                txt += "DESCRIPTION: " + (node.desc || 'N/A') + "\\n";
                 
-                if (node.host) txt += "LAST_IP: " + node.host + "\n";
+                if (node.host) txt += "LAST_IP: " + node.host + "\\n";
                 
-                txt += "--- HARDWARE ---\n";
+                txt += "--- HARDWARE ---\\n";
                 if (node.hwinfo) {
-                    txt += JSON.stringify(node.hwinfo, null, 2) + "\n";
+                    txt += JSON.stringify(node.hwinfo, null, 2) + "\\n";
                 } else {
-                    txt += "N/A\n";
+                    txt += "N/A\\n";
                 }
-                txt += "=== END OF EXPORT ===\n";
+                txt += "=== END OF EXPORT ===\\n";
 
                 res.setHeader('Content-disposition', 'attachment; filename=' + safeName + '_ticket.txt');
                 res.setHeader('Content-type', 'text/plain; charset=utf-8');
