@@ -14,7 +14,7 @@ module.exports.exportclient = function (parent) {
     ];
 
     // ====================================================================
-    // 1. FRONT-END: Pouzdano postavljanje tipki u Software i Details tab
+    // 1. FRONT-END: Dinamičko postavljanje tipki u Toolbarove
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
         if (typeof currentNode == 'undefined' || currentNode == null) return;
@@ -31,13 +31,12 @@ module.exports.exportclient = function (parent) {
             iframe.src = url;
         }
 
-        // Pomoćna funkcija koja stvara naše 3 tipke
+        // Glavna funkcija za generiranje naše 3 tipke
         function buildButtonContainer(targetId, shouldScrapeDom) {
             var group = document.createElement('span');
             group.id = targetId;
-            group.style.marginLeft = '10px';
-            group.style.marginBottom = '10px';
             group.style.display = 'inline-block';
+            group.style.verticalAlign = 'middle';
 
             var btnCsv = document.createElement('button');
             btnCsv.className = 'btn btn-secondary btn-sm';
@@ -70,12 +69,12 @@ module.exports.exportclient = function (parent) {
 
                 var extractedApps = [];
                 
-                // DOM SCRAPING: Radimo samo ako smo kliknuli iz Software taba
+                // DOM SCRAPING: Samo ako čitamo iz Software taba
                 if (shouldScrapeDom) {
                     var rows = document.querySelectorAll('table tr, .table tr');
                     for (var i = 0; i < rows.length; i++) {
                         var cols = rows[i].querySelectorAll('td');
-                        if (cols.length >= 2) {
+                        if (cols.length >= 2 && cols[0].offsetParent !== null) {
                             var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
                             var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
                             if (appName && appName !== 'Name') {
@@ -85,7 +84,6 @@ module.exports.exportclient = function (parent) {
                     }
                 }
 
-                // Traženje WebSocket veze
                 var ws = null;
                 if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
                 else if (typeof server != 'undefined' && server != null) ws = server;
@@ -121,21 +119,26 @@ module.exports.exportclient = function (parent) {
             return group;
         }
 
-        // LOKACIJA 1: SOFTWARE TAB
+        // LOKACIJA 1: SOFTWARE TAB (Ubacujemo pored search polja)
         var softwareSearch = document.querySelector('input[placeholder*="Search software"]');
-        if (softwareSearch && softwareSearch.parentNode) {
+        if (softwareSearch && softwareSearch.offsetParent !== null) {
             var swToolbar = softwareSearch.parentNode;
             if (!document.getElementById('mticket-btns-software')) {
-                swToolbar.appendChild(buildButtonContainer('mticket-btns-software', true));
+                var swGroup = buildButtonContainer('mticket-btns-software', true);
+                swGroup.style.marginLeft = '10px';
+                swToolbar.appendChild(swGroup);
             }
         }
 
-        // LOKACIJA 2: DETAILS TAB
-        var detailsTable = document.getElementById('devdetailstable');
-        if (detailsTable && detailsTable.parentNode) {
-            var detailsContainer = detailsTable.parentNode;
+        // LOKACIJA 2: DETAILS TAB (Ubacujemo u tvoj pronadeni DIV)
+        var detailsToolbar = document.getElementById('devListToolbarViewIcons3');
+        if (detailsToolbar && detailsToolbar.offsetParent !== null) {
             if (!document.getElementById('mticket-btns-details')) {
-                detailsContainer.insertBefore(buildButtonContainer('mticket-btns-details', false), detailsTable);
+                var detailsGroup = buildButtonContainer('mticket-btns-details', false);
+                // Dodajemo marginu desno kako bi bilo razmaka između naših tipki i refresh ikone
+                detailsGroup.style.marginRight = '15px'; 
+                // Ubacujemo tipke na samo početak toolbar kontejnera (lijevo od refresh ikone)
+                detailsToolbar.insertBefore(detailsGroup, detailsToolbar.firstChild);
             }
         }
     };
@@ -184,7 +187,6 @@ module.exports.exportclient = function (parent) {
                             if (!sw && wsagents[nodeid].software) sw = wsagents[nodeid].software;
                         }
 
-                        // FALLBACK LOGIKA: Koristi podatke s ekrana ako ih ima, u suprotnom povlači iz RAM-a
                         var finalSw = (command.scrapedSoftware && command.scrapedSoftware.length > 0) 
                             ? { apps: command.scrapedSoftware } 
                             : (sw || null);
