@@ -167,42 +167,55 @@ module.exports.exportclient = function (parent) {
         document.getElementById('btn-api-sync').onclick = sendToApi;
     };
 
-    // ====================================================================
-    // 2. BACK-END: Prihvat iz WebSocketa i slanje u mTicket API
+// ====================================================================
+    // 2. BACK-END ENGINE: Dubinski dohvat iz wsagents RAM-a i slanje u mTicket
     // ====================================================================
     obj.serveraction = function (command, myparent, user) {
         if (command.action === 'plugin' && command.plugin === 'exportclient' && command.pluginaction === 'send_api_sync') {
             
+            var nodeid = command.nodeId;
+            if (!nodeid) return;
+
             var safeDbGet = function(id, callback) {
                 if (typeof obj.meshServer.db.Get === 'function') obj.meshServer.db.Get(id, callback);
                 else if (typeof obj.meshServer.db.get === 'function') obj.meshServer.db.get(id, callback);
                 else callback("Nema DB funkcije", null);
             };
 
-            safeDbGet(command.nodeId, function (err, nodes) {
+            // 1. Povlačimo osnovne podatke o računalu iz baze (Ime, IP, OS)
+            safeDbGet(nodeid, function (err, nodes) {
                 var node = null;
                 if (Array.isArray(nodes) && nodes.length > 0) node = nodes[0];
                 else if (nodes && !Array.isArray(nodes) && nodes._id) node = nodes;
 
                 if (!node) return;
 
-                // Raspakiravamo primljene stringove nazad u objekte (ili null ako pukne)
-                var hwObj = null;
-                var swObj = null;
-                try { if (command.hwStr) hwObj = JSON.parse(command.hwStr); } catch(e) {}
-                try { if (command.swStr) swObj = JSON.parse(command.swStr); } catch(e) {}
+                // 2. DIREKTAN PRISTUP AKTIVNOM AGENTU U RAM-u POSLUŽITELJA
+                var hw = null;
+                var sw = null;
 
+                var wsagents = obj.meshServer.webserver.wsagents;
+                if (wsagents && wsagents[nodeid]) {
+                    var agent = wsagents[nodeid];
+                    
+                    // Izvlačimo hardver i softver iz svih poznatih memorijskih struktura agenta
+                    hw = agent.hwinfo || agent.hardware || agent.sysinfo || (agent.agentInfo ? agent.agentInfo.hwinfo : null);
+                    sw = agent.software || agent.swinfo || agent.apps || (agent.agentInfo ? agent.agentInfo.software : null);
+                }
+
+                // 3. Konstruiranje payloada za mTicket webhook
                 var payloadObj = {
                     node_id: node._id,
                     name: node.name || 'Nepoznato',
                     os: node.osdesc || node.mtype || 'Nepoznato',
                     ip: node.host || 'Offline',
-                    hardware: hwObj,
-                    software: swObj
+                    hardware: hw || null,
+                    software: sw || null
                 };
 
                 var payloadStr = JSON.stringify(payloadObj);
 
+                // 4. Slanje POST zahtjeva na mTicket webhook
                 var https = require('https');
                 var url = require('url');
                 var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
@@ -222,8 +235,18 @@ module.exports.exportclient = function (parent) {
                     }
                 };
 
-                var apiReq = https.request(options, function(apiRes) {});
-                apiReq.on('error', function(e) {});
+                var apiReq = https.request(options, function(apiRes) {
+                    var body = '';
+                    apiRes.on('data', function(chunk) { body += chunk; });
+                    apiRes.on('end', function() {
+                        console.log("-> [mTicket Sync via WebSocket] Status:", apiRes.statusCode, body);
+                    });
+                });
+
+                apiReq.on('error', function(e) {
+                    console.log("! [mTicket Sync Error]:", e.message);
+                });
+
                 apiReq.write(payloadStr);
                 apiReq.end();
             });
