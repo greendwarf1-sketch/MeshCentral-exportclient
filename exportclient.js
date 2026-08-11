@@ -1,7 +1,7 @@
 'use strict';
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
- * exportclient.js - Unified Buttons & Smart DOM-Scraping Sync
+ * exportclient.js - DOM-Scraping mTicket Sync (3 Buttons Edition)
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -14,7 +14,7 @@ module.exports.exportclient = function (parent) {
     ];
 
     // ====================================================================
-    // 1. FRONT-END: Dinamičko postavljanje 3 tipke ovisno o aktivnom tabu
+    // 1. FRONT-END: Čitanje aplikacija i ubacivanje 3 tipke
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
         if (typeof currentNode == 'undefined' || currentNode == null) return;
@@ -31,31 +31,18 @@ module.exports.exportclient = function (parent) {
             iframe.src = url;
         }
 
-        // Brišemo staru grupu tipki ako postoji (kako se ne bi duplicirale kod refresha)
-        var existingGroup = document.getElementById('mc-mticket-btn-group');
+        // Brišemo staru grupu tipki da se ne bi duplicirale prilikom osvježavanja taba
+        var existingGroup = document.getElementById('btn-tab-mticket-group');
         if (existingGroup) existingGroup.remove();
 
-        // Identificiramo elemente specifične za Software i Details tabove
-        var softwareToolbar = document.querySelector('input[placeholder*="Search software"]');
-        var detailsTable = document.getElementById('devdetailstable');
-
-        // Provjeravamo koji je tab TRENUTNO vidljiv na ekranu
-        var isSoftwareVisible = (softwareToolbar && softwareToolbar.offsetParent !== null);
-        var isDetailsVisible = (detailsTable && detailsTable.offsetParent !== null);
-
-        // Ako nismo ni na Software ni na Details tabu, prekidamo iscrtavanje
-        if (!isSoftwareVisible && !isDetailsVisible) return;
-
-        // Kreiramo glavni kontejner za sve 3 tipke
+        // ----------------------------------------------------------------
+        // KREIRANJE GRUPE OD 3 TIPKE
+        // ----------------------------------------------------------------
         var btnGroup = document.createElement('span');
-        btnGroup.id = 'mc-mticket-btn-group';
-        btnGroup.style.display = 'inline-block';
-        
-        // Prilagođavamo margine ovisno o tabu
-        if (isSoftwareVisible) btnGroup.style.marginLeft = '15px';
-        if (isDetailsVisible) btnGroup.style.marginBottom = '15px';
+        btnGroup.id = 'btn-tab-mticket-group';
+        btnGroup.style.marginLeft = '10px';
+        btnGroup.style.verticalAlign = 'middle';
 
-        // --- TIPKA 1: CSV ---
         var btnCsv = document.createElement('button');
         btnCsv.className = 'btn btn-secondary btn-sm';
         btnCsv.style.marginRight = '5px';
@@ -65,7 +52,6 @@ module.exports.exportclient = function (parent) {
             triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); 
         };
 
-        // --- TIPKA 2: TXT ---
         var btnTxt = document.createElement('button');
         btnTxt.className = 'btn btn-primary btn-sm';
         btnTxt.style.marginRight = '5px';
@@ -75,35 +61,35 @@ module.exports.exportclient = function (parent) {
             triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); 
         };
 
-        // --- TIPKA 3: API SYNC ---
-        var btnSync = document.createElement('button');
-        btnSync.className = 'btn btn-success btn-sm';
-        btnSync.innerHTML = '🚀 Pošalji u mTicket';
-        btnSync.onclick = function(e) {
+        var syncBtn = document.createElement('button');
+        syncBtn.className = 'btn btn-success btn-sm';
+        syncBtn.innerHTML = '🚀 Pošalji u mTicket';
+        
+        syncBtn.onclick = function(e) {
             e.preventDefault();
             var btn = this;
             var originalText = btn.innerHTML;
-            btn.innerHTML = '⏳ Čitanje...';
+            btn.innerHTML = '⏳ Čitanje ekrana...';
             btn.disabled = true;
 
+            // DOM SCRAPING: Kupimo podatke direktno iz tablice na ekranu
             var extractedApps = [];
+            var rows = document.querySelectorAll('table tr, .table tr');
             
-            // DOM SCRAPING: Čitamo samo ako smo na Software tabu gdje je tablica vidljiva
-            if (isSoftwareVisible) {
-                var rows = document.querySelectorAll('table tr, .table tr');
-                for (var i = 0; i < rows.length; i++) {
-                    var cols = rows[i].querySelectorAll('td');
-                    if (cols.length >= 2 && cols[0].offsetParent !== null) { // Preskačemo skrivene redove
-                        var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
-                        var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
-                        if (appName && appName !== 'Name') {
-                            extractedApps.push({ name: appName, version: appVer });
-                        }
+            for (var i = 0; i < rows.length; i++) {
+                var cols = rows[i].querySelectorAll('td');
+                // offsetParent !== null osigurava da ne čitamo skrivene redove iz drugih tabova
+                if (cols.length >= 2 && cols[0].offsetParent !== null) {
+                    var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
+                    var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
+                    if (appName && appName !== 'Name') {
+                        extractedApps.push({ name: appName, version: appVer });
                     }
                 }
             }
 
-            // Traženje WebSocket veze
+            btn.innerHTML = '⏳ Slanje...';
+
             var ws = null;
             if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
             else if (typeof server != 'undefined' && server != null) ws = server;
@@ -116,14 +102,14 @@ module.exports.exportclient = function (parent) {
                     plugin: 'exportclient', 
                     pluginaction: 'send_api_sync',
                     nodeId: nodeId,
-                    scrapedSoftware: extractedApps
+                    scrapedSoftware: extractedApps 
                 });
                 
                 setTimeout(function() {
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                    var appMsg = extractedApps.length > 0 ? ('\nPročitano ' + extractedApps.length + ' aplikacija.') : '';
-                    alert('✅ Podaci su poslani u mTicket!' + appMsg);
+                    var msg = extractedApps.length > 0 ? ('Pročitano aplikacija: ' + extractedApps.length) : 'Podaci iz Details taba poslani u pozadini.';
+                    alert('✅ Uspješno poslano u mTicket!\n' + msg);
                 }, 1000);
             } else {
                 btn.innerHTML = originalText;
@@ -132,21 +118,34 @@ module.exports.exportclient = function (parent) {
             }
         };
 
-        // Ubacujemo tipke u kontejner
         btnGroup.appendChild(btnCsv);
         btnGroup.appendChild(btnTxt);
-        btnGroup.appendChild(btnSync);
+        btnGroup.appendChild(syncBtn);
 
-        // Pozicioniramo cijeli kontejner na pravu lokaciju
-        if (isSoftwareVisible) {
-            softwareToolbar.parentNode.appendChild(btnGroup);
-        } else if (isDetailsVisible) {
+        // ----------------------------------------------------------------
+        // UBACIVANJE TIPKI U AKTIVNI TAB
+        // ----------------------------------------------------------------
+        
+        // Pokušaj 1: Software Tab (Tvoja provjerena metoda)
+        var searchInput = document.querySelector('input[placeholder*="Search software"]');
+        if (searchInput && searchInput.offsetParent !== null) {
+            var toolbar = searchInput.parentNode;
+            toolbar.appendChild(btnGroup);
+            return;
+        }
+
+        // Pokušaj 2: Details Tab
+        var detailsTable = document.getElementById('devdetailstable');
+        if (detailsTable && detailsTable.offsetParent !== null) {
+            btnGroup.style.marginBottom = '15px'; // Malo razmaka ispod tipki
+            btnGroup.style.display = 'block'; 
             detailsTable.parentNode.insertBefore(btnGroup, detailsTable);
+            return;
         }
     };
 
     // ====================================================================
-    // 2. BACK-END ENGINE: Pametni prihvat i spajanje podataka
+    // 2. BACK-END ENGINE: Prihvat scraped podataka i slanje u mTicket
     // ====================================================================
     obj.serveraction = function (command, myparent, user) {
         if (command.action === 'plugin' && command.plugin === 'exportclient' && command.pluginaction === 'send_api_sync') {
@@ -155,7 +154,6 @@ module.exports.exportclient = function (parent) {
             if (!nodeid) return;
 
             var sysid = nodeid.replace(/^node\/\//, 'si//');
-            var swid  = nodeid.replace(/^node\/\//, 'sw//');
 
             var safeDbGet = function(id, callback) {
                 if (typeof obj.meshServer.db.Get === 'function') obj.meshServer.db.Get(id, callback);
@@ -175,60 +173,47 @@ module.exports.exportclient = function (parent) {
                     if (Array.isArray(sysnodes) && sysnodes.length > 0) sysinfo = sysnodes[0];
                     else if (sysnodes && !Array.isArray(sysnodes) && sysnodes._id) sysinfo = sysnodes;
 
-                    safeDbGet(swid, function (err, swnodes) {
-                        var software = null;
-                        if (Array.isArray(swnodes) && swnodes.length > 0) software = swnodes[0];
-                        else if (swnodes && !Array.isArray(swnodes) && swnodes._id) software = swnodes;
+                    var hw = sysinfo ? (sysinfo.public || sysinfo.data || sysinfo.hwinfo || sysinfo) : (node.hwinfo || node.hardware || node.sysinfo);
 
-                        var hw = sysinfo ? (sysinfo.public || sysinfo.data || sysinfo.hwinfo || sysinfo) : (node.hwinfo || node.hardware || node.sysinfo);
-                        var sw = software ? (software.public || software.data || software.apps || software.software || software) : (node.software || node.swinfo || node.apps);
+                    var wsagents = obj.meshServer.webserver.wsagents;
+                    if (wsagents && wsagents[nodeid] && !hw) {
+                        hw = wsagents[nodeid].hwinfo || wsagents[nodeid].hardware;
+                    }
 
-                        var wsagents = obj.meshServer.webserver.wsagents;
-                        if (wsagents && wsagents[nodeid]) {
-                            if (!hw && wsagents[nodeid].hwinfo) hw = wsagents[nodeid].hwinfo;
-                            if (!sw && wsagents[nodeid].software) sw = wsagents[nodeid].software;
+                    var payloadObj = {
+                        node_id: node._id,
+                        name: node.name || 'Nepoznato',
+                        os: node.osdesc || node.mtype || 'Nepoznato',
+                        ip: node.host || 'Offline',
+                        hardware: hw || null,
+                        software: { apps: command.scrapedSoftware || [] }
+                    };
+
+                    var payloadStr = JSON.stringify(payloadObj);
+
+                    var https = require('https');
+                    var url = require('url');
+                    var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
+                    var apiReqUrl = new url.URL(mTicketURL);
+                    
+                    var options = {
+                        hostname: apiReqUrl.hostname,
+                        port: apiReqUrl.port || 443,
+                        path: apiReqUrl.pathname + apiReqUrl.search,
+                        method: 'POST',
+                        timeout: 5000,
+                        rejectUnauthorized: false,
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Content-Length': Buffer.byteLength(payloadStr, 'utf8'),
+                            'User-Agent': 'MeshCentral-mTicket-Sync/1.0'
                         }
+                    };
 
-                        // PAMETNI FALLBACK: Ako korisnik šalje iz "Details" taba, koristimo softver iz pozadine!
-                        var finalSw = (command.scrapedSoftware && command.scrapedSoftware.length > 0) 
-                            ? { apps: command.scrapedSoftware } 
-                            : (sw || null);
-
-                        var payloadObj = {
-                            node_id: node._id,
-                            name: node.name || 'Nepoznato',
-                            os: node.osdesc || node.mtype || 'Nepoznato',
-                            ip: node.host || 'Offline',
-                            hardware: hw || null,
-                            software: finalSw
-                        };
-
-                        var payloadStr = JSON.stringify(payloadObj);
-
-                        var https = require('https');
-                        var url = require('url');
-                        var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
-                        var apiReqUrl = new url.URL(mTicketURL);
-                        
-                        var options = {
-                            hostname: apiReqUrl.hostname,
-                            port: apiReqUrl.port || 443,
-                            path: apiReqUrl.pathname + apiReqUrl.search,
-                            method: 'POST',
-                            timeout: 5000,
-                            rejectUnauthorized: false,
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Content-Length': Buffer.byteLength(payloadStr, 'utf8'),
-                                'User-Agent': 'MeshCentral-mTicket-Sync/1.0'
-                            }
-                        };
-
-                        var apiReq = https.request(options, function(apiRes) {});
-                        apiReq.on('error', function(e) {});
-                        apiReq.write(payloadStr);
-                        apiReq.end();
-                    });
+                    var apiReq = https.request(options, function(apiRes) {});
+                    apiReq.on('error', function(e) {});
+                    apiReq.write(payloadStr);
+                    apiReq.end();
                 });
             });
         }
