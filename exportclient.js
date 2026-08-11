@@ -1,6 +1,6 @@
 'use strict';
 /**********************************************************************
- * Copyright (C) 2026 Mr. Green & MCS
+ * Copyright (C) 2026 Mr. Green
  * exportclient.js - Ultimate Local-Render, Refresh Trigger & DOM Scraping
  **********************************************************************/
 
@@ -27,7 +27,6 @@ module.exports.exportclient = function (parent) {
             var nodeIp = currentNode.host || 'Offline';
             var safeName = nodeName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
-            // IDEJA: Pokretanje MeshCentral nativnog Refresh gumba
             function triggerNativeRefresh() {
                 try {
                     if (typeof refreshDetails === 'function') {
@@ -43,7 +42,6 @@ module.exports.exportclient = function (parent) {
                 return false;
             }
 
-            // Čitanje Hardvera iz Details DOM-a (#p17info / #p17)
             function scrapeDetailsDOM() {
                 var container = document.getElementById('p17info') || document.getElementById('p17') || document.getElementById('devdetailstable');
                 if (!container) return null;
@@ -58,13 +56,13 @@ module.exports.exportclient = function (parent) {
                     storage: []
                 };
 
-                // Procesor
+                // CPU
                 var cpuMatch = text.match(/CPU\s*\n?\s*([^\n]+)/i) || text.match(/Processor\s*\n?\s*([^\n]+)/i);
                 if (cpuMatch && cpuMatch[1]) {
                     scrapedHw.cpu.push({ name: cpuMatch[1].trim() });
                 }
 
-                // Matična ploča / BIOS
+                // MBO / BIOS
                 var mbVendor = text.match(/Motherboard[\s\S]*?Vendor\s*\n?\s*([^\n]+)/i);
                 var mbName = text.match(/Motherboard[\s\S]*?Name\s*\n?\s*([^\n]+)/i);
                 var biosVendor = text.match(/BIOS[\s\S]*?Vendor\s*\n?\s*([^\n]+)/i);
@@ -76,7 +74,7 @@ module.exports.exportclient = function (parent) {
                     });
                 }
 
-                // RAM Memorija (zbroj iz keksa ili direktno)
+                // RAM Memory
                 var memMatches = text.matchAll(/Capacity(?:\s*[\/:]\s*Speed)?\s*\n?\s*"?(\d+)\s*Mb/gi);
                 var totalMb = 0;
                 for (var match of memMatches) {
@@ -89,7 +87,7 @@ module.exports.exportclient = function (parent) {
                     if (ramGb) scrapedHw.netinfo.totalmem = parseFloat(ramGb[1]) * 1024 * 1024 * 1024;
                 }
 
-                // Diskovi i Particije
+                // Disk
                 var volMatches = text.matchAll(/([A-Z]:)\s*\n?\s*Capacity\s*\n?\s*([\d\.]+\s*GB)[\s\S]*?Capacity\s*Remaining\s*\n?\s*([\d\.]+\s*GB)/gi);
                 for (var vol of volMatches) {
                     scrapedHw.storage.push({
@@ -106,7 +104,7 @@ module.exports.exportclient = function (parent) {
                     }
                 }
 
-                // Mreža
+                // Network
                 var netMatches = text.matchAll(/([A-Za-z0-9\s_\-]+)\s*\n?\s*MAC Layer\s*\n?\s*MAC:\s*([0-9A-Fa-f:]+)[\s\S]*?IPv4 Layer\s*\n?\s*IP:\s*([\d\.\,\s]+)/gi);
                 for (var net of netMatches) {
                     scrapedHw.netinfo.netifs.push({
@@ -119,7 +117,7 @@ module.exports.exportclient = function (parent) {
                 return (scrapedHw.cpu.length > 0 || scrapedHw.storage.length > 0 || scrapedHw.netinfo.totalmem > 0) ? scrapedHw : null;
             }
 
-            // Lovac na Hardver iz RAM-a (Fallback)
+
             function getHardwareFromRAM() {
                 for (var key in window) {
                     try {
@@ -134,7 +132,7 @@ module.exports.exportclient = function (parent) {
                 return null;
             }
 
-            // Lovac na Softver iz RAM-a (Fallback)
+
             function getSoftwareFromRAM() {
                 for (var key in window) {
                     try {
@@ -150,7 +148,6 @@ module.exports.exportclient = function (parent) {
                 return null;
             }
 
-            // NETAKNUTO: Software DOM Scraping koji već savršeno radi!
             function scrapeSoftwareDOM() {
                 var extractedApps = [];
                 var rows = document.querySelectorAll('table tr, .table tr');
@@ -200,17 +197,17 @@ module.exports.exportclient = function (parent) {
                 btnObj.innerHTML = '⏳ Čitanje...';
                 btnObj.disabled = true;
 
-                // Ako smo u Details tabu, za svaki slučaj okinemo i nativni Refresh!
+
                 if (context === 'details') {
                     triggerNativeRefresh();
                 }
 
-                // Odgađamo skupljanje za 150ms ako je okinut refresh, da se DOM stabilizira
+
                 setTimeout(function() {
                     var hw = (context === 'details') ? (scrapeDetailsDOM() || getHardwareFromRAM()) : getHardwareFromRAM();
                     var sw = (context === 'software') ? scrapeSoftwareDOM() : getSoftwareFromRAM();
 
-                    // 1. GENERIRANJE CSV-A LOKALNO
+                    // 1. GENERATE CSV-A 
                     if (actionType === 'csv') {
                         var csv = "Kategorija,Svojstvo,Vrijednost\n";
                         csv += `OSNOVNO,Ime,${nodeName}\nOSNOVNO,IP Adresa,${nodeIp}\nOSNOVNO,Operativni Sustav,${nodeOs}\n`;
@@ -231,7 +228,7 @@ module.exports.exportclient = function (parent) {
                         btnObj.innerHTML = originalText;
                         btnObj.disabled = false;
                     } 
-                    // 2. GENERIRANJE TXT-A LOKALNO
+                    // 2. GENERATE TXT-A
                     else if (actionType === 'ticket') {
                         var txt = "=== MESH CENTRAL TICKET EXPORT ===\n";
                         txt += `MC_NODE_ID: ${nodeId}\nHOSTNAME: ${nodeName}\nOS_TYPE: ${nodeOs}\nLAST_IP: ${nodeIp}\n`;
@@ -255,7 +252,7 @@ module.exports.exportclient = function (parent) {
                         btnObj.innerHTML = originalText;
                         btnObj.disabled = false;
                     }
-                    // 3. SLANJE U MTICKET
+                    // 3. SEND to EXT APP
                     else if (actionType === 'mticket') {
                         var ws = null;
                         if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
@@ -269,7 +266,7 @@ module.exports.exportclient = function (parent) {
                                 btnObj.innerHTML = originalText;
                                 btnObj.disabled = false;
                                 var msg = (sw && sw.apps) ? ('\nZapakirano ' + sw.apps.length + ' aplikacija.') : '';
-                                alert('✅ Uspješno poslano u mTicket!' + msg);
+                                alert('✅ Success!' + msg);
                             }, 1000);
                         } else {
                             btnObj.innerHTML = originalText;
@@ -382,7 +379,7 @@ module.exports.exportclient = function (parent) {
                     var payloadStr = JSON.stringify(payloadObj);
                     var https = require('https');
                     var url = require('url');
-                    var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
+                    var mTicketURL = "https://path/to/extapp/webhook_mesh.php?token=ABCDEFG123456";
                     var apiReqUrl = new url.URL(mTicketURL);
                     
                     var options = {
