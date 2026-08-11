@@ -1,7 +1,7 @@
 'use strict';
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
- * exportclient.js - Unified Buttons & Smart DOM-Scraping Sync
+ * exportclient.js - Unified Buttons & Watchdog Sync
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -14,133 +14,143 @@ module.exports.exportclient = function (parent) {
     ];
 
     // ====================================================================
-    // 1. FRONT-END: Dinamičko postavljanje tipki u Toolbarove
+    // 1. FRONT-END: Watchdog petlja koja pazi da gumbići nikad ne nestanu
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
-        if (typeof currentNode == 'undefined' || currentNode == null) return;
-        var nodeId = currentNode._id;
+        
+        // Brišemo staru petlju ako prelazimo na drugo računalo (spriječava curenje memorije)
+        if (window.mcsTicketWatchdog) clearInterval(window.mcsTicketWatchdog);
 
-        function triggerSilentDownload(url) {
-            var iframe = document.getElementById('exportHiddenFrame');
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = 'exportHiddenFrame';
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-            }
-            iframe.src = url;
-        }
-
-        // Glavna funkcija za generiranje naše 3 tipke
-        function buildButtonContainer(targetId, shouldScrapeDom) {
-            var group = document.createElement('span');
-            group.id = targetId;
-            group.style.display = 'inline-block';
-            group.style.verticalAlign = 'middle';
-
-            var btnCsv = document.createElement('button');
-            btnCsv.className = 'btn btn-secondary btn-sm';
-            btnCsv.style.marginRight = '5px';
-            btnCsv.innerHTML = '📥 Preuzmi CSV';
-            btnCsv.onclick = function(e) { 
-                e.preventDefault(); 
-                triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); 
-            };
-
-            var btnTxt = document.createElement('button');
-            btnTxt.className = 'btn btn-primary btn-sm';
-            btnTxt.style.marginRight = '5px';
-            btnTxt.innerHTML = '🎫 Preuzmi TXT';
-            btnTxt.onclick = function(e) { 
-                e.preventDefault(); 
-                triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); 
-            };
-
-            var syncBtn = document.createElement('button');
-            syncBtn.className = 'btn btn-success btn-sm';
-            syncBtn.innerHTML = '🚀 Pošalji u mTicket';
+        // Pokrećemo nadzornika koji se vrti svakih 500ms
+        window.mcsTicketWatchdog = setInterval(function() {
             
-            syncBtn.onclick = function(e) {
-                e.preventDefault();
-                var btn = this;
-                var originalText = btn.innerHTML;
-                btn.innerHTML = '⏳ Čitanje...';
-                btn.disabled = true;
+            if (typeof currentNode == 'undefined' || currentNode == null) return;
+            var nodeId = currentNode._id;
 
-                var extractedApps = [];
+            function triggerSilentDownload(url) {
+                var iframe = document.getElementById('exportHiddenFrame');
+                if (!iframe) {
+                    iframe = document.createElement('iframe');
+                    iframe.id = 'exportHiddenFrame';
+                    iframe.style.display = 'none';
+                    document.body.appendChild(iframe);
+                }
+                iframe.src = url;
+            }
+
+            function buildButtonContainer(targetId, shouldScrapeDom) {
+                var group = document.createElement('span');
+                group.id = targetId;
+                group.style.display = 'inline-block';
+                group.style.verticalAlign = 'middle';
+
+                var btnCsv = document.createElement('button');
+                btnCsv.className = 'btn btn-secondary btn-sm';
+                btnCsv.style.marginRight = '5px';
+                btnCsv.innerHTML = '📥 Preuzmi CSV';
+                btnCsv.onclick = function(e) { 
+                    e.preventDefault(); 
+                    triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); 
+                };
+
+                var btnTxt = document.createElement('button');
+                btnTxt.className = 'btn btn-primary btn-sm';
+                btnTxt.style.marginRight = '5px';
+                btnTxt.innerHTML = '🎫 Preuzmi TXT';
+                btnTxt.onclick = function(e) { 
+                    e.preventDefault(); 
+                    triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); 
+                };
+
+                var syncBtn = document.createElement('button');
+                syncBtn.className = 'btn btn-success btn-sm';
+                syncBtn.innerHTML = '🚀 Pošalji u mTicket';
                 
-                // DOM SCRAPING: Samo ako čitamo iz Software taba
-                if (shouldScrapeDom) {
-                    var rows = document.querySelectorAll('table tr, .table tr');
-                    for (var i = 0; i < rows.length; i++) {
-                        var cols = rows[i].querySelectorAll('td');
-                        if (cols.length >= 2 && cols[0].offsetParent !== null) {
-                            var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
-                            var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
-                            if (appName && appName !== 'Name') {
-                                extractedApps.push({ name: appName, version: appVer });
+                syncBtn.onclick = function(e) {
+                    e.preventDefault();
+                    var btn = this;
+                    var originalText = btn.innerHTML;
+                    btn.innerHTML = '⏳ Čitanje...';
+                    btn.disabled = true;
+
+                    var extractedApps = [];
+                    
+                    // DOM SCRAPING
+                    if (shouldScrapeDom) {
+                        var rows = document.querySelectorAll('table tr, .table tr');
+                        for (var i = 0; i < rows.length; i++) {
+                            if (rows[i].offsetParent !== null) {
+                                var cols = rows[i].querySelectorAll('td');
+                                if (cols.length >= 2) {
+                                    var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
+                                    var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
+                                    if (appName && appName !== 'Name' && appName !== 'Property') {
+                                        extractedApps.push({ name: appName, version: appVer });
+                                    }
+                                }
                             }
                         }
                     }
-                }
 
-                var ws = null;
-                if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
-                else if (typeof server != 'undefined' && server != null) ws = server;
-                else if (typeof window.meshserver != 'undefined' && window.meshserver != null) ws = window.meshserver;
-                else if (typeof app != 'undefined' && app != null && app.server != null) ws = app.server;
+                    var ws = null;
+                    if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
+                    else if (typeof server != 'undefined' && server != null) ws = server;
+                    else if (typeof window.meshserver != 'undefined' && window.meshserver != null) ws = window.meshserver;
+                    else if (typeof app != 'undefined' && app != null && app.server != null) ws = app.server;
 
-                if (ws != null) {
-                    ws.send({ 
-                        action: 'plugin', 
-                        plugin: 'exportclient', 
-                        pluginaction: 'send_api_sync',
-                        nodeId: nodeId,
-                        scrapedSoftware: extractedApps
-                    });
-                    
-                    setTimeout(function() {
+                    if (ws != null) {
+                        ws.send({ 
+                            action: 'plugin', 
+                            plugin: 'exportclient', 
+                            pluginaction: 'send_api_sync',
+                            nodeId: nodeId,
+                            scrapedSoftware: extractedApps
+                        });
+                        
+                        setTimeout(function() {
+                            btn.innerHTML = originalText;
+                            btn.disabled = false;
+                            var msg = extractedApps.length > 0 ? ('\nPročitano ' + extractedApps.length + ' aplikacija.') : '\nPodaci proslijeđeni u pozadini.';
+                            alert('✅ Uspješno poslano u mTicket!' + msg);
+                        }, 1000);
+                    } else {
                         btn.innerHTML = originalText;
                         btn.disabled = false;
-                        var msg = extractedApps.length > 0 ? ('\nPročitano ' + extractedApps.length + ' aplikacija.') : '\nPodaci proslijeđeni u pozadini.';
-                        alert('✅ Uspješno poslano u mTicket!' + msg);
-                    }, 1000);
-                } else {
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    alert('❌ Greška: Nema aktivne WebSocket veze.');
+                        alert('❌ Greška: Nema aktivne WebSocket veze.');
+                    }
+                };
+
+                group.appendChild(btnCsv);
+                group.appendChild(btnTxt);
+                group.appendChild(syncBtn);
+
+                return group;
+            }
+
+            // --- LOKACIJA 1: SOFTWARE TAB ---
+            var softwareSearch = document.querySelector('input[placeholder*="Search software"]');
+            if (softwareSearch && softwareSearch.offsetParent !== null) {
+                var swToolbar = softwareSearch.parentNode;
+                // Ako tipki nema, odmah ih ubacujemo
+                if (!document.getElementById('mticket-btns-software')) {
+                    var swGroup = buildButtonContainer('mticket-btns-software', true);
+                    swGroup.style.marginLeft = '10px';
+                    swToolbar.appendChild(swGroup);
                 }
-            };
-
-            group.appendChild(btnCsv);
-            group.appendChild(btnTxt);
-            group.appendChild(syncBtn);
-
-            return group;
-        }
-
-        // LOKACIJA 1: SOFTWARE TAB (Ubacujemo pored search polja)
-        var softwareSearch = document.querySelector('input[placeholder*="Search software"]');
-        if (softwareSearch && softwareSearch.offsetParent !== null) {
-            var swToolbar = softwareSearch.parentNode;
-            if (!document.getElementById('mticket-btns-software')) {
-                var swGroup = buildButtonContainer('mticket-btns-software', true);
-                swGroup.style.marginLeft = '10px';
-                swToolbar.appendChild(swGroup);
             }
-        }
 
-        // LOKACIJA 2: DETAILS TAB (Ubacujemo u tvoj pronadeni DIV)
-        var detailsToolbar = document.getElementById('devListToolbarViewIcons3');
-        if (detailsToolbar && detailsToolbar.offsetParent !== null) {
-            if (!document.getElementById('mticket-btns-details')) {
-                var detailsGroup = buildButtonContainer('mticket-btns-details', false);
-                // Dodajemo marginu desno kako bi bilo razmaka između naših tipki i refresh ikone
-                detailsGroup.style.marginRight = '15px'; 
-                // Ubacujemo tipke na samo početak toolbar kontejnera (lijevo od refresh ikone)
-                detailsToolbar.insertBefore(detailsGroup, detailsToolbar.firstChild);
+            // --- LOKACIJA 2: DETAILS TAB ---
+            var detailsToolbar = document.getElementById('devListToolbarViewIcons3');
+            if (detailsToolbar && detailsToolbar.offsetParent !== null) {
+                // Ako tipki nema, odmah ih ubacujemo
+                if (!document.getElementById('mticket-btns-details')) {
+                    var detailsGroup = buildButtonContainer('mticket-btns-details', false);
+                    detailsGroup.style.marginRight = '15px'; 
+                    detailsToolbar.insertBefore(detailsGroup, detailsToolbar.firstChild);
+                }
             }
-        }
+
+        }, 500); // Kraj intervala (Ponavlja se svakih pola sekunde)
     };
 
     // ====================================================================
