@@ -1,7 +1,7 @@
 'use strict';
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
- * exportclient.js - API Auto-Sync (WebSocket Master Edition v2)
+ * exportclient.js - Tab-Injected mTicket Sync
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -14,61 +14,43 @@ module.exports.exportclient = function (parent) {
     ];
 
     // ====================================================================
-    // 1. FRONT-END: GUI i Slanje u WebSocket tunel
+    // 1. FRONT-END: Ubacivanje gumba direktno u Software tab traku
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
         if (typeof currentNode == 'undefined' || currentNode == null) return;
         var nodeId = currentNode._id;
-        var p19 = document.getElementById('p19');
-        if (!p19) return;
 
-        function triggerSilentDownload(url) {
-            var iframe = document.getElementById('exportHiddenFrame');
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = 'exportHiddenFrame';
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-            }
-            iframe.src = url;
+        // Tražimo elemente unutar Software tab-a (npr. polje za pretragu softvera sa slike)
+        var searchInput = document.querySelector('input[placeholder*="Search software"]');
+        if (!searchInput) {
+            // Ako Software tab nije otvoren, brišemo naš gumb ako je zaostao od prije
+            var existingBtn = document.getElementById('btn-tab-mticket');
+            if (existingBtn) existingBtn.remove();
+            return;
         }
 
-        var sendToApi = function(e) {
+        // Provjeravamo je li naš gumb već u traci da ga ne dupliramo
+        if (document.getElementById('btn-tab-mticket')) return;
+
+        // Pronašli smo Software tab! Stvaramo naš gumb u gornjoj traci
+        var toolbar = searchInput.parentNode;
+        if (!toolbar) return;
+
+        var syncBtn = document.createElement('button');
+        syncBtn.id = 'btn-tab-mticket';
+        syncBtn.className = 'btn btn-success btn-sm';
+        syncBtn.style.marginLeft = '10px';
+        syncBtn.style.verticalAlign = 'middle';
+        syncBtn.innerHTML = '🚀 Pošalji u mTicket';
+
+        syncBtn.onclick = function(e) {
             e.preventDefault();
             var btn = this;
-            
-            var hwData = null;
-            var swData = null;
-
-            // 1. Primarno čitanje iz RAM-a MeshCentrala
-            if (typeof systemInfo !== 'undefined' && systemInfo[nodeId]) hwData = systemInfo[nodeId];
-            if (typeof softwareInfo !== 'undefined' && softwareInfo[nodeId]) swData = softwareInfo[nodeId];
-
-            // 2. RAM Skeniranje (Auto-Discovery)
-            if (!hwData || !swData) {
-                for (var key in window) {
-                    try {
-                        if (window[key] && typeof window[key] === 'object' && window[key][nodeId]) {
-                            var val = window[key][nodeId];
-                            if (!swData && (key.toLowerCase().indexOf('soft') > -1 || (Array.isArray(val) && val.length > 5))) swData = val;
-                            if (!hwData && (key.toLowerCase().indexOf('sys') > -1 || key.toLowerCase().indexOf('hw') > -1 || val.netinfo || val.cpu)) hwData = val;
-                        }
-                    } catch(err) {}
-                }
-            }
-
-            // NOVO: Sigurno pakiranje podataka OVDJE kako WebSocket ne bi izbacio null!
-            var safeStringify = function(dataObj, fallbackMsg) {
-                if (!dataObj) return JSON.stringify({ "DEBUG": fallbackMsg });
-                try { return JSON.stringify(dataObj); } 
-                catch(err) { return JSON.stringify({ "DEBUG": "Greška pri pakiranju: " + err.message }); }
-            };
-
             var originalText = btn.innerHTML;
             btn.innerHTML = '⏳ Slanje...';
             btn.disabled = true;
 
-            // Pronalazak WebSocketa
+            // Pronalazak WebSocketa za komunikaciju s pozadinom
             var ws = null;
             if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
             else if (typeof server != 'undefined' && server != null) ws = server;
@@ -80,95 +62,27 @@ module.exports.exportclient = function (parent) {
                     action: 'plugin', 
                     plugin: 'exportclient', 
                     pluginaction: 'send_api_sync',
-                    nodeId: nodeId,
-                    // Šaljemo spakirano u tekst!
-                    hwStr: safeStringify(hwData, "Nije učitano - Kliknite prvo na Hardware tab!"),
-                    swStr: safeStringify(swData, "Nije učitano - Kliknite prvo na Software tab!") 
+                    nodeId: nodeId 
                 });
                 
                 setTimeout(function() {
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                    alert('🚀 Podaci su proslijeđeni poslužitelju!\nProvjerite mTicket log.');
-                }, 800);
+                    alert('✅ Podaci o računalu uspješno su poslanu u mTicket bazu!');
+                }, 1000);
             } else {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-                alert('❌ Kritična greška: Ne mogu pronaći internu WebSocket vezu.');
+                alert('❌ Greška: Nema aktivne WebSocket veze s poslužiteljem.');
             }
         };
 
-        if (document.getElementById('nav-exportclient')) {
-            document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); };
-            document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); };
-            document.getElementById('btn-api-sync').onclick = sendToApi;
-            return;
-        }
-
-        var pluginNav = null;
-        var links = p19.getElementsByTagName('a');
-        for (var i = 0; i < links.length; i++) {
-            if (links[i].innerHTML.indexOf('ScriptTask') !== -1 || links[i].innerHTML.indexOf('Work From Home') !== -1 || links[i].innerHTML.indexOf('Event Log') !== -1) {
-                pluginNav = links[i].parentNode;
-                break;
-            }
-        }
-
-        if (!pluginNav) {
-            pluginNav = document.createElement('div');
-            pluginNav.id = 'pluginNav';
-            pluginNav.style.paddingBottom = '15px';
-            pluginNav.style.fontSize = '14px';
-            var p19title = document.getElementById('p19title');
-            if (p19title && p19title.nextSibling) p19.insertBefore(pluginNav, p19title.nextSibling);
-            else p19.insertBefore(pluginNav, p19.firstChild);
-        }
-
-        if (pluginNav.children.length > 0) {
-            var sep = document.createElement('span');
-            sep.innerHTML = ' <span style="color:#888;">|</span> ';
-            pluginNav.appendChild(sep);
-        }
-
-        var myLink = document.createElement('a');
-        myLink.id = 'nav-exportclient';
-        myLink.href = '#';
-        myLink.innerHTML = 'Client Export';
-        myLink.style.cursor = 'pointer';
-        pluginNav.appendChild(myLink);
-
-        var myPanel = document.createElement('div');
-        myPanel.id = 'panel-exportclient';
-        myPanel.style.display = 'none';
-        
-        myPanel.innerHTML = `
-            <div style="border:1px solid #ddd; padding:20px; border-radius:5px; background-color:#f9f9f9; margin-top:15px;">
-                <h4 style="margin-top:0; color:#333; font-weight:bold;">mTicket Client Export & API Sync</h4>
-                <p style="font-size:13px; color:#666; margin-bottom:15px;">Preuzmite podatke ručno ili ih automatski sinkronizirajte s ITAM bazom mTicket sustava.</p>
-                <button id="btn-export-csv" class="btn btn-secondary btn-sm" style="margin-right:5px;">📥 Preuzmi CSV</button>
-                <button id="btn-export-ticket" class="btn btn-primary btn-sm" style="margin-right:5px;">🎫 Preuzmi TXT</button>
-                <button id="btn-api-sync" class="btn btn-success btn-sm">🚀 Pošalji u mTicket</button>
-            </div>
-        `;
-        p19.appendChild(myPanel);
-
-        myLink.onclick = function(e) {
-            e.preventDefault();
-            for (var i = 0; i < p19.children.length; i++) {
-                var child = p19.children[i];
-                if (child.id === 'p19title' || child === pluginNav || child === myPanel) continue;
-                child.style.display = 'none';
-            }
-            myPanel.style.display = 'block';
-        };
-
-        document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); };
-        document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); };
-        document.getElementById('btn-api-sync').onclick = sendToApi;
+        // Ubacujemo gumb odmah pored tražilice softvera
+        toolbar.appendChild(syncBtn);
     };
 
-// ====================================================================
-    // 2. BACK-END ENGINE: Dubinski dohvat iz wsagents RAM-a i slanje u mTicket
+    // ====================================================================
+    // 2. BACK-END ENGINE: Prikupljanje podataka i slanje u mTicket
     // ====================================================================
     obj.serveraction = function (command, myparent, user) {
         if (command.action === 'plugin' && command.plugin === 'exportclient' && command.pluginaction === 'send_api_sync') {
@@ -176,13 +90,15 @@ module.exports.exportclient = function (parent) {
             var nodeid = command.nodeId;
             if (!nodeid) return;
 
+            var sysid = nodeid.replace(/^node\/\//, 'si//');
+            var swid  = nodeid.replace(/^node\/\//, 'sw//');
+
             var safeDbGet = function(id, callback) {
                 if (typeof obj.meshServer.db.Get === 'function') obj.meshServer.db.Get(id, callback);
                 else if (typeof obj.meshServer.db.get === 'function') obj.meshServer.db.get(id, callback);
-                else callback("Nema DB funkcije", null);
+                else callback("Nije pronađena db.Get funkcija", null);
             };
 
-            // 1. Povlačimo osnovne podatke o računalu iz baze (Ime, IP, OS)
             safeDbGet(nodeid, function (err, nodes) {
                 var node = null;
                 if (Array.isArray(nodes) && nodes.length > 0) node = nodes[0];
@@ -190,71 +106,67 @@ module.exports.exportclient = function (parent) {
 
                 if (!node) return;
 
-                // 2. DIREKTAN PRISTUP AKTIVNOM AGENTU U RAM-u POSLUŽITELJA
-                var hw = null;
-                var sw = null;
+                safeDbGet(sysid, function (err, sysnodes) {
+                    var sysinfo = null;
+                    if (Array.isArray(sysnodes) && sysnodes.length > 0) sysinfo = sysnodes[0];
+                    else if (sysnodes && !Array.isArray(sysnodes) && sysnodes._id) sysinfo = sysnodes;
 
-                var wsagents = obj.meshServer.webserver.wsagents;
-                if (wsagents && wsagents[nodeid]) {
-                    var agent = wsagents[nodeid];
-                    
-                    // Izvlačimo hardver i softver iz svih poznatih memorijskih struktura agenta
-                    hw = agent.hwinfo || agent.hardware || agent.sysinfo || (agent.agentInfo ? agent.agentInfo.hwinfo : null);
-                    sw = agent.software || agent.swinfo || agent.apps || (agent.agentInfo ? agent.agentInfo.software : null);
-                }
+                    safeDbGet(swid, function (err, swnodes) {
+                        var software = null;
+                        if (Array.isArray(swnodes) && swnodes.length > 0) software = swnodes[0];
+                        else if (swnodes && !Array.isArray(swnodes) && swnodes._id) software = swnodes;
 
-                // 3. Konstruiranje payloada za mTicket webhook
-                var payloadObj = {
-                    node_id: node._id,
-                    name: node.name || 'Nepoznato',
-                    os: node.osdesc || node.mtype || 'Nepoznato',
-                    ip: node.host || 'Offline',
-                    hardware: hw || null,
-                    software: sw || null
-                };
+                        var hw = sysinfo ? (sysinfo.public || sysinfo.data || sysinfo.hwinfo || sysinfo) : (node.hwinfo || node.hardware || node.sysinfo);
+                        var sw = software ? (software.public || software.data || software.apps || software.software || software) : (node.software || node.swinfo || node.apps);
 
-                var payloadStr = JSON.stringify(payloadObj);
+                        var wsagents = obj.meshServer.webserver.wsagents;
+                        if (wsagents && wsagents[nodeid]) {
+                            if (!hw && wsagents[nodeid].hwinfo) hw = wsagents[nodeid].hwinfo;
+                            if (!sw && wsagents[nodeid].software) sw = wsagents[nodeid].software;
+                        }
 
-                // 4. Slanje POST zahtjeva na mTicket webhook
-                var https = require('https');
-                var url = require('url');
-                var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
-                var apiReqUrl = new url.URL(mTicketURL);
-                
-                var options = {
-                    hostname: apiReqUrl.hostname,
-                    port: apiReqUrl.port || 443,
-                    path: apiReqUrl.pathname + apiReqUrl.search,
-                    method: 'POST',
-                    timeout: 5000,
-                    rejectUnauthorized: false,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Content-Length': Buffer.byteLength(payloadStr, 'utf8'),
-                        'User-Agent': 'MeshCentral-mTicket-Sync/1.0'
-                    }
-                };
+                        var payloadObj = {
+                            node_id: node._id,
+                            name: node.name || 'Nepoznato',
+                            os: node.osdesc || node.mtype || 'Nepoznato',
+                            ip: node.host || 'Offline',
+                            hardware: hw || null,
+                            software: sw || null
+                        };
 
-                var apiReq = https.request(options, function(apiRes) {
-                    var body = '';
-                    apiRes.on('data', function(chunk) { body += chunk; });
-                    apiRes.on('end', function() {
-                        console.log("-> [mTicket Sync via WebSocket] Status:", apiRes.statusCode, body);
+                        var payloadStr = JSON.stringify(payloadObj);
+
+                        var https = require('https');
+                        var url = require('url');
+                        var mTicketURL = "https://podrska.mcs-informatika.hr/webhook_mesh.php?token=Kljuc12345MCS!";
+                        var apiReqUrl = new url.URL(mTicketURL);
+                        
+                        var options = {
+                            hostname: apiReqUrl.hostname,
+                            port: apiReqUrl.port || 443,
+                            path: apiReqUrl.pathname + apiReqUrl.search,
+                            method: 'POST',
+                            timeout: 5000,
+                            rejectUnauthorized: false,
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Content-Length': Buffer.byteLength(payloadStr, 'utf8'),
+                                'User-Agent': 'MeshCentral-mTicket-Sync/1.0'
+                            }
+                        };
+
+                        var apiReq = https.request(options, function(apiRes) {});
+                        apiReq.on('error', function(e) {});
+                        apiReq.write(payloadStr);
+                        apiReq.end();
                     });
                 });
-
-                apiReq.on('error', function(e) {
-                    console.log("! [mTicket Sync Error]:", e.message);
-                });
-
-                apiReq.write(payloadStr);
-                apiReq.end();
             });
         }
     };
 
     // ====================================================================
-    // 3. BACK-END: Zadržavamo staro generiranje CSV/TXT datoteka
+    // 3. BACK-END: CSV i TXT generiranje
     // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         if (req.query.download === 'csv' || req.query.download === 'ticket') {
@@ -290,6 +202,12 @@ module.exports.exportclient = function (parent) {
 
                         var hw = sysinfo ? (sysinfo.public || sysinfo.data || sysinfo.hwinfo || sysinfo) : (node.hwinfo || node.hardware || node.sysinfo);
                         var sw = software ? (software.public || software.data || software.apps || software.software || software) : (node.software || node.swinfo || node.apps);
+
+                        var wsagents = obj.meshServer.webserver.wsagents;
+                        if (wsagents && wsagents[nodeid]) {
+                            if (!hw && wsagents[nodeid].hwinfo) hw = wsagents[nodeid].hwinfo;
+                            if (!sw && wsagents[nodeid].software) sw = wsagents[nodeid].software;
+                        }
 
                         var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
 
