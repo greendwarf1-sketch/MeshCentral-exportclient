@@ -1,7 +1,7 @@
 'use strict';
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
- * exportclient.js - API Auto-Sync (WebSocket Ultimate Edition)
+ * exportclient.js - API Auto-Sync (WebSocket Master Edition v2)
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -14,7 +14,7 @@ module.exports.exportclient = function (parent) {
     ];
 
     // ====================================================================
-    // 1. FRONT-END: GUI i Slanje u WebSocket tunel (Bypass CSP-a)
+    // 1. FRONT-END: GUI i Slanje u WebSocket tunel
     // ====================================================================
     obj.onDeviceRefreshEnd = function () {
         if (typeof currentNode == 'undefined' || currentNode == null) return;
@@ -40,12 +40,11 @@ module.exports.exportclient = function (parent) {
             var hwData = null;
             var swData = null;
 
-            // Čitanje RAM-a
-            if (currentNode) {
-                hwData = currentNode.hwinfo || currentNode.hardware || currentNode.sysinfo;
-                swData = currentNode.software || currentNode.swinfo || currentNode.apps;
-            }
+            // 1. Primarno čitanje iz RAM-a MeshCentrala
+            if (typeof systemInfo !== 'undefined' && systemInfo[nodeId]) hwData = systemInfo[nodeId];
+            if (typeof softwareInfo !== 'undefined' && softwareInfo[nodeId]) swData = softwareInfo[nodeId];
 
+            // 2. RAM Skeniranje (Auto-Discovery)
             if (!hwData || !swData) {
                 for (var key in window) {
                     try {
@@ -58,11 +57,18 @@ module.exports.exportclient = function (parent) {
                 }
             }
 
+            // NOVO: Sigurno pakiranje podataka OVDJE kako WebSocket ne bi izbacio null!
+            var safeStringify = function(dataObj, fallbackMsg) {
+                if (!dataObj) return JSON.stringify({ "DEBUG": fallbackMsg });
+                try { return JSON.stringify(dataObj); } 
+                catch(err) { return JSON.stringify({ "DEBUG": "Greška pri pakiranju: " + err.message }); }
+            };
+
             var originalText = btn.innerHTML;
             btn.innerHTML = '⏳ Slanje...';
             btn.disabled = true;
 
-            // LOV NA WEBSOCKET: Različite verzije MeshCentrala koriste različita imena
+            // Pronalazak WebSocketa
             var ws = null;
             if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
             else if (typeof server != 'undefined' && server != null) ws = server;
@@ -75,24 +81,23 @@ module.exports.exportclient = function (parent) {
                     plugin: 'exportclient', 
                     pluginaction: 'send_api_sync',
                     nodeId: nodeId,
-                    hw: hwData || null,
-                    sw: swData || null 
+                    // Šaljemo spakirano u tekst!
+                    hwStr: safeStringify(hwData, "Nije učitano - Kliknite prvo na Hardware tab!"),
+                    swStr: safeStringify(swData, "Nije učitano - Kliknite prvo na Software tab!") 
                 });
                 
-                // Zbog brzine WebSocketa, možemo odmah ispisati uspjeh
                 setTimeout(function() {
                     btn.innerHTML = originalText;
                     btn.disabled = false;
-                    alert('🚀 Podaci su poslani poslužitelju!\nProvjerite mTicket bazu.');
+                    alert('🚀 Podaci su proslijeđeni poslužitelju!\nProvjerite mTicket log.');
                 }, 800);
             } else {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-                alert('❌ Kritična greška: Ne mogu pronaći internu WebSocket vezu u ovoj verziji MeshCentrala.');
+                alert('❌ Kritična greška: Ne mogu pronaći internu WebSocket vezu.');
             }
         };
 
-        // Crtanje izbornika
         if (document.getElementById('nav-exportclient')) {
             document.getElementById('btn-export-csv').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=csv&node=' + encodeURIComponent(nodeId)); };
             document.getElementById('btn-export-ticket').onclick = function(e) { e.preventDefault(); triggerSilentDownload('/pluginadmin.ashx?pin=exportclient&download=ticket&node=' + encodeURIComponent(nodeId)); };
@@ -181,14 +186,19 @@ module.exports.exportclient = function (parent) {
 
                 if (!node) return;
 
-                // Spajamo osnovne DB podatke i bogate RAM podatke
+                // Raspakiravamo primljene stringove nazad u objekte (ili null ako pukne)
+                var hwObj = null;
+                var swObj = null;
+                try { if (command.hwStr) hwObj = JSON.parse(command.hwStr); } catch(e) {}
+                try { if (command.swStr) swObj = JSON.parse(command.swStr); } catch(e) {}
+
                 var payloadObj = {
                     node_id: node._id,
                     name: node.name || 'Nepoznato',
                     os: node.osdesc || node.mtype || 'Nepoznato',
                     ip: node.host || 'Offline',
-                    hardware: command.hw || null,
-                    software: command.sw || null
+                    hardware: hwObj,
+                    software: swObj
                 };
 
                 var payloadStr = JSON.stringify(payloadObj);
@@ -212,7 +222,6 @@ module.exports.exportclient = function (parent) {
                     }
                 };
 
-                // Node.js slobodno zaobilazi sve CORS i CSP blokade jer šalje iz pozadine
                 var apiReq = https.request(options, function(apiRes) {});
                 apiReq.on('error', function(e) {});
                 apiReq.write(payloadStr);
