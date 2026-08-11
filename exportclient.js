@@ -1,7 +1,7 @@
 'use strict';
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
- * exportclient.js - API Auto-Sync (WebSocket Master Edition)
+ * exportclient.js - API Auto-Sync (WebSocket Ultimate Edition)
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
@@ -62,9 +62,15 @@ module.exports.exportclient = function (parent) {
             btn.innerHTML = '⏳ Slanje...';
             btn.disabled = true;
 
-            // ULAZ U WEBSOCKET TUNEL: Nema 401 grešaka i nema CSP blokada!
-            if (typeof server != 'undefined' && server != null) {
-                server.send({ 
+            // LOV NA WEBSOCKET: Različite verzije MeshCentrala koriste različita imena
+            var ws = null;
+            if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
+            else if (typeof server != 'undefined' && server != null) ws = server;
+            else if (typeof window.meshserver != 'undefined' && window.meshserver != null) ws = window.meshserver;
+            else if (typeof app != 'undefined' && app != null && app.server != null) ws = app.server;
+
+            if (ws != null) {
+                ws.send({ 
                     action: 'plugin', 
                     plugin: 'exportclient', 
                     pluginaction: 'send_api_sync',
@@ -82,7 +88,7 @@ module.exports.exportclient = function (parent) {
             } else {
                 btn.innerHTML = originalText;
                 btn.disabled = false;
-                alert('❌ Greška: Nema aktivne WebSocket veze s poslužiteljem.');
+                alert('❌ Kritična greška: Ne mogu pronaći internu WebSocket vezu u ovoj verziji MeshCentrala.');
             }
         };
 
@@ -206,7 +212,7 @@ module.exports.exportclient = function (parent) {
                     }
                 };
 
-                // Node.js slobodno zaobilazi sve CORS i CSP blokade
+                // Node.js slobodno zaobilazi sve CORS i CSP blokade jer šalje iz pozadine
                 var apiReq = https.request(options, function(apiRes) {});
                 apiReq.on('error', function(e) {});
                 apiReq.write(payloadStr);
@@ -216,7 +222,7 @@ module.exports.exportclient = function (parent) {
     };
 
     // ====================================================================
-    // 3. BACK-END: Zadržavamo samo staro generiranje CSV/TXT datoteka
+    // 3. BACK-END: Zadržavamo staro generiranje CSV/TXT datoteka
     // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         if (req.query.download === 'csv' || req.query.download === 'ticket') {
