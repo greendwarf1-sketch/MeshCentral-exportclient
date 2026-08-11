@@ -1,22 +1,19 @@
 'use strict';
 /**********************************************************************
  * Copyright (C) 2026 Mr. Green & MCS
- * exportclient.js - Smart Cache & Dual-Tab Sync
+ * exportclient.js - Final Details Tab Fix
  **********************************************************************/
 
 module.exports.exportclient = function (parent) {
     var obj = {};
     obj.parent = parent;
     obj.meshServer = parent.parent;
-    obj.exportCache = {}; // NOVO: Privremena memorija za CSV/TXT!
+    obj.exportCache = {};
 
     obj.exports = [
         'onDeviceRefreshEnd'
     ];
 
-    // ====================================================================
-    // 1. FRONT-END: Dinamički gumbi i pametno čitanje
-    // ====================================================================
     obj.onDeviceRefreshEnd = function () {
         if (window.mcsTicketWatchdog) clearInterval(window.mcsTicketWatchdog);
 
@@ -24,50 +21,89 @@ module.exports.exportclient = function (parent) {
             if (typeof currentNode == 'undefined' || currentNode == null) return;
             var nodeId = currentNode._id;
 
-            // PAMETNO ČITANJE HARDVERA IZ RAM-a
-            function getHardwareFromRAM() {
-                if (typeof systemInfo !== 'undefined' && systemInfo[nodeId]) return systemInfo[nodeId];
-                if (typeof currentNode !== 'undefined' && currentNode) return currentNode.hwinfo || currentNode.hardware || currentNode.sysinfo;
-                return null;
-            }
-
-            // PAMETNO ČITANJE SOFTVERA IZ RAM-a
-            function getSoftwareFromRAM() {
-                if (typeof softwareInfo !== 'undefined' && softwareInfo[nodeId]) return softwareInfo[nodeId];
-                if (typeof currentNode !== 'undefined' && currentNode) return currentNode.software || currentNode.swinfo || currentNode.apps;
-                return null;
-            }
-
-            // CILJANO ČITANJE EKRANA (Samo kada smo na Software tabu)
-            function scrapeSoftwareDOM() {
-                var extractedApps = [];
-                var rows = document.querySelectorAll('table tr, .table tr');
-                for (var i = 0; i < rows.length; i++) {
-                    if (rows[i].offsetParent !== null) { // Čitaj samo vidljivo
-                        var cols = rows[i].querySelectorAll('td');
-                        if (cols.length >= 2) {
-                            var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
-                            var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
-                            // Osigurač da ne čitamo krive tablice
-                            if (appName && appName !== 'Name' && appName !== 'Property' && appName !== 'General' && appName !== 'Platform') {
-                                extractedApps.push({ name: appName, version: appVer });
-                            }
-                        }
-                    }
-                }
-                // Ako ekran nema ništa, povuci iz RAM-a kao plan B
-                return extractedApps.length > 0 ? { apps: extractedApps } : getSoftwareFromRAM();
-            }
-
-            // GLAVNI KONTROLER KLIKOVA
             function triggerAction(actionType, context, btnObj) {
                 var originalText = btnObj.innerHTML;
                 btnObj.innerHTML = '⏳ Molim pričekajte...';
                 btnObj.disabled = true;
 
-                var hw = getHardwareFromRAM();
-                // OVISNO O TABU ODAKLE JE KLIKNUTO, BIRA METODU ČITANJA SOFTVERA
-                var sw = (context === 'software') ? scrapeSoftwareDOM() : getSoftwareFromRAM();
+                // 1. IZVLAČENJE SOFTVERA (Netaknuto, rekli smo da ovo radi)
+                var sw = null;
+                if (context === 'software') {
+                    var extractedApps = [];
+                    var rows = document.querySelectorAll('table tr, .table tr');
+                    for (var i = 0; i < rows.length; i++) {
+                        if (rows[i].offsetParent !== null) {
+                            var cols = rows[i].querySelectorAll('td');
+                            if (cols.length >= 2) {
+                                var appName = cols[0].innerText ? cols[0].innerText.trim() : '';
+                                var appVer = cols[1].innerText ? cols[1].innerText.trim() : '';
+                                if (appName && appName !== 'Name' && appName !== 'Property' && appName !== 'General' && appName !== 'Platform') {
+                                    extractedApps.push({ name: appName, version: appVer });
+                                }
+                            }
+                        }
+                    }
+                    if (extractedApps.length > 0) sw = { apps: extractedApps };
+                }
+
+                // 2. IZVLAČENJE HARDVERA IZ DETAILS TABA (NOVA DOM SCRAPING LOGIKA)
+                var hw = null;
+                if (context === 'details') {
+                    // Ako smo u details tabu, prvo probamo pokupiti podatke direktno s ekrana
+                    var detailsTable = document.getElementById('devdetailstable');
+                    if (detailsTable) {
+                        var scrapedHw = { cpu: [], netinfo: { totalmem: 0, netifs: [] }, storage: [] };
+                        var dtRows = detailsTable.querySelectorAll('tr');
+                        
+                        for (var j = 0; j < dtRows.length; j++) {
+                            var dtCols = dtRows[j].querySelectorAll('td');
+                            if (dtCols.length >= 2) {
+                                var prop = dtCols[0].innerText ? dtCols[0].innerText.trim() : '';
+                                var val = dtCols[1].innerText ? dtCols[1].innerText.trim() : '';
+                                
+                                // Detekcija memorije (prvo što se nađe s GB se sprema u bytes)
+                                if (prop.indexOf('Memory') !== -1 && val.indexOf('GB') !== -1) {
+                                     var gbVal = parseFloat(val.split(' ')[0]);
+                                     if (!isNaN(gbVal)) scrapedHw.netinfo.totalmem = gbVal * 1024 * 1024 * 1024;
+                                }
+                                
+                                // Detekcija procesora
+                                if (prop.indexOf('Processor') !== -1) {
+                                     scrapedHw.cpu.push({ name: val });
+                                }
+                                
+                                // Detekcija diskova
+                                if (prop.indexOf('Storage') !== -1 || (prop === '' && val.indexOf(':\\') !== -1)) {
+                                     // Očekujemo format npr. "C:\ (200 GB Total, 100 GB Free)"
+                                     var driveName = val.split(' ')[0] || 'Disk';
+                                     scrapedHw.storage.push({ name: driveName, total: 0, free: 0, textDesc: val });
+                                }
+                                
+                                // Detekcija mreže
+                                if (prop.indexOf('Network') !== -1 || val.match(/([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})/)) {
+                                      scrapedHw.netinfo.netifs.push({ name: 'Net', mac: val, ipv4: '' });
+                                }
+                            }
+                        }
+                        
+                        // Ako smo išta ulovili sa ekrana, spremi
+                        if (scrapedHw.cpu.length > 0 || scrapedHw.netinfo.totalmem > 0) {
+                            hw = scrapedHw;
+                        }
+                    }
+                }
+                
+                // 3. FALLBACK: Ako nema s ekrana, pokušaj iz RAM-a 
+                if (!hw) {
+                    if (typeof systemInfo !== 'undefined' && systemInfo[nodeId]) hw = systemInfo[nodeId];
+                    else if (typeof currentNode !== 'undefined' && currentNode) hw = currentNode.hwinfo || currentNode.hardware || currentNode.sysinfo;
+                }
+                
+                if (!sw && context !== 'software') {
+                   if (typeof softwareInfo !== 'undefined' && softwareInfo[nodeId]) sw = softwareInfo[nodeId];
+                   else if (typeof currentNode !== 'undefined' && currentNode) sw = currentNode.software || currentNode.swinfo || currentNode.apps;
+                }
+
 
                 var ws = null;
                 if (typeof meshserver != 'undefined' && meshserver != null) ws = meshserver;
@@ -77,7 +113,6 @@ module.exports.exportclient = function (parent) {
 
                 if (ws != null) {
                     if (actionType === 'mticket') {
-                        // Slanje u mTicket
                         ws.send({ action: 'plugin', plugin: 'exportclient', pluginaction: 'send_api_sync', nodeId: nodeId, hwData: hw, swData: sw });
                         setTimeout(function() {
                             btnObj.innerHTML = originalText;
@@ -85,10 +120,8 @@ module.exports.exportclient = function (parent) {
                             alert('✅ Uspješno poslano u mTicket!');
                         }, 1000);
                     } else {
-                        // PREUZIMANJE DATOTEKA: 1. Spremi u poslužitelj preko WebSocketa
                         ws.send({ action: 'plugin', plugin: 'exportclient', pluginaction: 'cache_for_download', nodeId: nodeId, hwData: hw, swData: sw });
                         
-                        // 2. Odgodi pola sekunde i zatraži klasičan GET download (bez 401 grešaka!)
                         setTimeout(function() {
                             var iframe = document.getElementById('exportHiddenFrame');
                             if (!iframe) {
@@ -139,7 +172,6 @@ module.exports.exportclient = function (parent) {
                 return group;
             }
 
-            // LOKACIJA 1: SOFTWARE TAB (označen kao "software" kontekst)
             var swSearch = document.querySelector('input[placeholder*="Search software"]');
             if (swSearch && swSearch.offsetParent !== null) {
                 var swToolbar = swSearch.parentNode;
@@ -150,7 +182,6 @@ module.exports.exportclient = function (parent) {
                 }
             }
 
-            // LOKACIJA 2: DETAILS TAB (označen kao "details" kontekst)
             var detailsToolbar = document.getElementById('devListToolbarViewIcons3');
             if (detailsToolbar && detailsToolbar.offsetParent !== null) {
                 if (!document.getElementById('mticket-btns-details')) {
@@ -163,15 +194,11 @@ module.exports.exportclient = function (parent) {
         }, 500); 
     };
 
-    // ====================================================================
-    // 2. BACK-END ENGINE: Procesiranje i pamćenje podataka
-    // ====================================================================
     obj.serveraction = function (command, myparent, user) {
         if (command.action !== 'plugin' || command.plugin !== 'exportclient') return;
         var nodeid = command.nodeId;
         if (!nodeid) return;
 
-        // AKCIJA 1: Spremi u memoriju za brzi download CSV/TXT datoteke
         if (command.pluginaction === 'cache_for_download') {
             obj.exportCache[nodeid] = {
                 hw: command.hwData,
@@ -180,7 +207,6 @@ module.exports.exportclient = function (parent) {
             return;
         }
 
-        // AKCIJA 2: Slanje u mTicket
         if (command.pluginaction === 'send_api_sync') {
             var sysid = nodeid.replace(/^node\/\//, 'si//');
             var swid  = nodeid.replace(/^node\/\//, 'sw//');
@@ -256,9 +282,6 @@ module.exports.exportclient = function (parent) {
         }
     };
 
-    // ====================================================================
-    // 3. BACK-END: Generiranje datoteka iz privremene memorije
-    // ====================================================================
     obj.handleAdminReq = function(req, res, user) {
         if (req.query.download === 'csv' || req.query.download === 'ticket') {
             var nodeid = req.query.node;
@@ -277,12 +300,21 @@ module.exports.exportclient = function (parent) {
 
                 if (!node) return res.send("Računalo nije pronađeno.");
 
-                // IZVLAČIMO PODATKE IZ CACHEA KOJI JE POSLAN PRIJE POLA SEKUNDE!
+                // POVLAČENJE IZ CACHE-A
                 var cachedData = obj.exportCache[nodeid] || { hw: null, sw: null };
                 var hw = cachedData.hw;
                 var sw = cachedData.sw;
 
-                // Brišemo ih iz memorije da server ostane čist
+                // FALLBACK NA BAZU AKO CACHE OMANE
+                if (!hw || !sw) {
+                     var sysid = nodeid.replace(/^node\/\//, 'si//');
+                     var swid  = nodeid.replace(/^node\/\//, 'sw//');
+                     
+                     // Synchronous-like fallback behavior simulation
+                     if (!hw && node.hwinfo) hw = node.hwinfo;
+                     if (!sw && node.software) sw = node.software;
+                }
+
                 delete obj.exportCache[nodeid];
 
                 var safeName = (node.name || 'racunalo').replace(/[^a-z0-9]/gi, '_').toLowerCase();
@@ -293,6 +325,7 @@ module.exports.exportclient = function (parent) {
                 }
                 function formatDrive(drive) {
                     if (!drive) return 'Nepoznat Disk';
+                    if (drive.textDesc) return drive.textDesc; // Fallback for scraped drive
                     var total = (drive.total / (1024*1024*1024)).toFixed(2);
                     var free = (drive.free / (1024*1024*1024)).toFixed(2);
                     return drive.name + " (" + total + " GB Ukupno, " + free + " GB Slobodno)";
@@ -306,7 +339,7 @@ module.exports.exportclient = function (parent) {
                     
                     if (hw) {
                         if (hw.bios && hw.bios.length > 0) csv += `HARDVER,Matična ploča,${hw.bios[0].board_name || 'Nepoznato'} (${hw.bios[0].board_vendor || ''})\n`;
-                        if (hw.netinfo) csv += `HARDVER,RAM Memorija,${formatBytes(hw.netinfo.totalmem || hw.totalmem)}\n`;
+                        if (hw.netinfo && hw.netinfo.totalmem) csv += `HARDVER,RAM Memorija,${formatBytes(hw.netinfo.totalmem)}\n`;
                         
                         if (hw.cpu && hw.cpu.length > 0) {
                             hw.cpu.forEach(function(cpu) {
@@ -356,7 +389,7 @@ module.exports.exportclient = function (parent) {
                     if (hw) {
                         txt += "\n--- HARDWARE SUMMARY ---\n";
                         if (hw.cpu && hw.cpu[0]) txt += "CPU: " + hw.cpu[0].name + "\n";
-                        if (hw.netinfo) txt += "RAM: " + formatBytes(hw.netinfo.totalmem || hw.totalmem) + "\n";
+                        if (hw.netinfo && hw.netinfo.totalmem) txt += "RAM: " + formatBytes(hw.netinfo.totalmem) + "\n";
                         if (hw.storage) {
                             for(var d=0; d<hw.storage.length; d++) {
                                 txt += "DRIVE_" + d + ": " + formatDrive(hw.storage[d]) + "\n";
